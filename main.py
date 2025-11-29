@@ -113,7 +113,7 @@ def index():
             /* CSS for the image header */
             #headerLogo {{
                 width: 100%;
-                max-height: 200px;
+                max-height: 240px;
                 height: auto;
                 object-fit: fill;
                 display: block; 
@@ -533,7 +533,7 @@ def index():
             // ** START LOADING STATE **
             submitBtn.disabled = true;
             submitBtn.textContent = 'AI Judging in Progress...';
-            serverResponseDiv.innerHTML = "<h3>🤖 Sending frames to Judging Bot for Judgement... Please wait.</h3>"; 
+            serverResponseDiv.innerHTML = "<h3>🤖 Sending frames to Bot for Judgement... Please wait.</h3>"; 
 
             const selectedBase64Data = selectedIndices.map(idx => {{
                 return extractedFrames[idx].base64_data;
