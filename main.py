@@ -26,7 +26,7 @@ except Exception as e:
     print(f"Warning: Gemini client initialization failed. Is GEMINI_API_KEY set? Error: {e}")
     client = None # Set to None for error handling later
 
-MODEL_NAME = "gemini-2.5-pro" # Recommended for high-quality, complex multimodal reasoning
+MODEL_NAME = "gemini-2.5-flash" # Recommended for high-quality, complex multimodal reasoning
 FRAME_DIR = "temp_frames"
 STATIC_ROOT_DIR = os.path.join(os.getcwd(), "static")
 VIDEO_DIR = os.path.join(STATIC_ROOT_DIR, "videos")
