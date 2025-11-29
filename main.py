@@ -339,28 +339,43 @@ def index():
             }}
         }};
 
-        // --- Event Listener for Upload Button ---
+        // --- Event Listener for Upload Button (UPDATED for Loading State) ---
         document.getElementById("uploadBtn").onclick = async () => {{
             let fileToProcess = videoFileToUpload || document.getElementById("videoInput").files[0];
+            const uploadBtn = document.getElementById("uploadBtn");
+            const serverResponse = document.getElementById("serverResponse");
 
             if (!fileToProcess) {{ 
-                document.getElementById("serverResponse").innerHTML = "Error: No video file is selected or loaded.";
+                serverResponse.innerHTML = "Error: No video file is selected or loaded.";
                 return; 
             }}
-            document.getElementById("serverResponse").innerHTML = "Extracting frames...";
+            
+            // ** START LOADING STATE **
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Processing Frames...';
+            serverResponse.innerHTML = "<h3>⏳ Extracting key frames from video... please wait.</h3>";
 
             const formData = new FormData();
             formData.append("video", fileToProcess);
 
-            // API Call: Expects Base64 image data back
-            const res = await fetch("/extract_frames", {{ method:"POST", body: formData }});
-            const data = await res.json();
+            try {{
+                const res = await fetch("/extract_frames", {{ method:"POST", body: formData }});
+                const data = await res.json();
 
-            // Store Base64 data and timestamp
-            extractedFrames = data.frames || [];
-            selectedFrameIndices.clear(); 
-            renderFrames();
-            document.getElementById("serverResponse").innerHTML = "Frames extracted. Select key frames using the 'Focus' button and press 'Send' to continue.";
+                // ** END LOADING STATE **
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Video and Extract Frames';
+
+                extractedFrames = data.frames || [];
+                selectedFrameIndices.clear(); 
+                renderFrames();
+                serverResponse.innerHTML = "Frames extracted. Select key frames using the 'Focus' button and press 'Send' to continue.";
+            }} catch (error) {{
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Video and Extract Frames';
+                serverResponse.innerHTML = `<h3>❌ Error during frame extraction: ${{error.message}}</h3>`;
+                console.error(error);
+            }}
         }};
 
         // --- Handle file input change ---
@@ -389,14 +404,20 @@ def index():
             }});
         }}
 
-        // --- Submit Judgement Function (MODIFIED to send Base64 data) ---
+        // --- Submit Judgement Function (UPDATED for Loading State) ---
         document.getElementById("submitSelected").onclick = async () => {{
             const selectedIndices = Array.from(selectedFrameIndices).sort((a, b) => a - b);
+            const submitBtn = document.getElementById("submitSelected");
+            const serverResponseDiv = document.getElementById("serverResponse");
+
             if (selectedIndices.length === 0) {{ alert("Select at least one frame using the Focus button."); return; }}
-            document.getElementById("serverResponse").innerHTML = "Sending frames for AI Judgement... Please wait.";
+            
+            // ** START LOADING STATE **
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'AI Judging in Progress...';
+            serverResponseDiv.innerHTML = "<h3>🤖 Sending frames to Gemini for Judgement... Please wait.</h3>";
 
 
-            // Create an array of Base64 strings to send to the backend
             const selectedBase64Data = selectedIndices.map(idx => {{
                 return extractedFrames[idx].base64_data;
             }});
@@ -407,20 +428,31 @@ def index():
             // Send the Base64 array as a JSON string
             formData.append("frame_base64_json", JSON.stringify(selectedBase64Data));
 
-            // NOTE: API endpoint changed to /judge_base64_frames
-            const res = await fetch("/judge_base64_frames", {{ method:"POST", body: formData }});
-            const data = await res.json();
-            
-            const serverResponseDiv = document.getElementById("serverResponse");
             try {{
-                // Note: The LLM output MUST use the HTML <table> format as instructed.
-                serverResponseDiv.innerHTML = marked.parse(data.llm_output || "");
-            }} catch (e) {{
-                serverResponseDiv.textContent = JSON.stringify(data, null, 2);
-                console.error("Error parsing LLM output:", e);
+                const res = await fetch("/judge_base64_frames", {{ method:"POST", body: formData }});
+                const data = await res.json();
+                
+                // ** END LOADING STATE **
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Send Selected Frames for Judgement';
+
+                try {{
+                    // Note: The LLM output MUST use the HTML <table> format as instructed.
+                    serverResponseDiv.innerHTML = marked.parse(data.llm_output || "");
+                }} catch (e) {{
+                    // Fallback for parsing errors
+                    serverResponseDiv.textContent = JSON.stringify(data, null, 2);
+                    console.error("Error parsing LLM output:", e);
+                }}
+            }} catch (error) {{
+                // ** HANDLE ERROR **
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Send Selected Frames for Judgement';
+                serverResponseDiv.innerHTML = `<h3>❌ Network Error: Could not reach the server.</h3>`;
+                console.error("Fetch error during judgement submission:", error);
             }}
         }};
-        
+
         document.addEventListener('DOMContentLoaded', checkReadyState);
         </script>
     </div>
