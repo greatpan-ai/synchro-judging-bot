@@ -519,7 +519,10 @@ async def judge_frames(
     # Add the text prompt first
     prompt_text = (
         f"Analyze the sequence of images for the Artistic Swimming Figure: '{figure_name}'. "
+        # --- MODIFIED LINE BELOW ---
         f"Observations provided by the user: '{observations}'. "
+        # ADDED INSTRUCTION: If observations are empty, proceed based on images alone.
+        f"If the observations field is blank, base your assessment strictly on the visual evidence from the images. " 
         f"Reference the following judging guidelines: {prompt_template.get('content', 'No guidelines provided')}. "
         "Provide a technical assessment and a score out of 10. "
         "Format the response strictly using Markdown."
