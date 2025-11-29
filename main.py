@@ -12,9 +12,10 @@ from openai import OpenAI
 # ------------------------
 # Config
 # ------------------------
-# NOTE: Replace with your actual model name if different
 client = OpenAI()
-MODEL_NAME = "gpt-4.1-mini" 
+# --- MODIFIED 1: Changed to a valid OpenAI Vision Model ---
+MODEL_NAME = "gpt-4o"  
+# --------------------------------------------------------
 FRAME_DIR = "temp_frames"
 STATIC_ROOT_DIR = os.path.join(os.getcwd(), "static")
 VIDEO_DIR = os.path.join(STATIC_ROOT_DIR, "videos")
@@ -43,6 +44,7 @@ app.mount("/static", StaticFiles(directory=STATIC_ROOT_DIR), name="static")
 
 # ------------------------
 # Frontend HTML 🎨 
+# (No changes to the HTML/JavaScript logic were needed here)
 # ------------------------
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -223,56 +225,56 @@ def index():
                 border: 1px solid #ccc;
                 border-radius: 4px;
             }}
-        </style>
-    </head>
-    <body>
+        </style>
+    </head>
+    <body>
     <div class="container">
         <img id="headerLogo" src="/static/videos/Judging bot title.png" alt="Artistic Swimming Judging Bot Title"/>
 
-        <h2>Upload Video 🎥</h2>
+        <h2>Upload Video 🎥</h2>
         
         <video id="sampleVideoPlayer" controls>
             <source src="{SAMPLE_VIDEO_PATH}" type="video/mp4">
             Your browser does not support the video tag.
         </video>
 
-                <div class="control-group">
+                <div class="control-group">
             <input type="file" id="videoInput" accept="video/*" style="margin-bottom: 0; width: auto;">
-                        <button id="uploadBtn" disabled>Upload Video and Extract Frames</button>
+                        <button id="uploadBtn" disabled>Upload Video and Extract Frames</button>
             <button id="useSampleBtn">Use Sample Video</button>
         </div>
 
         <hr/>
-        <h2>Extracted Key Frames 📸</h2>
+        <h2>Extracted Key Frames 📸</h2>
         <div id="framesContainer"></div>
 
         <hr/>
-        <h2>Figure Details 📝</h2>
-        <h3>Observations (optional)</h3>
-        <textarea id="obsBox" rows="4" placeholder="Add specific notes about the athlete or attempt..."></textarea>
+        <h2>Figure Details 📝</h2>
+        <h3>Observations (optional)</h3>
+        <textarea id="obsBox" rows="4" placeholder="Add specific notes about the athlete or attempt..."></textarea>
 
-        <h3>Select Figure & Judge</h3>
+        <h3>Select Figure & Judge</h3>
         <div class="control-group">
-            <select id="figureSelect">
-                <option>301 Barracuda</option>
-                <option>309 Reverse Barracuda</option>
-                <option>360 Catalina</option>
+            <select id="figureSelect">
+                <option>301 Barracuda</option>
+                <option>309 Reverse Barracuda</option>
+                <option>360 Catalina</option>
                 <option>402 Ballet Leg</option>
                 <option>420 Dolphin</option>
                 <option>440 Somersault Back</option>
                 <option>502 Crane</option>
-                <option>Other</option>
-            </select>
+                <option>Other</option>
+            </select>
 
-            <button id="submitSelected" style="margin-top:0;">Send Selected Frames for Judgement</button>
+            <button id="submitSelected" style="margin-top:0;">Send Selected Frames for Judgement</button>
         </div>
 
         <hr/>
-        <h2>Artistic Swimming Figure Judging Bot 🤖</h2>
-        <div id="serverResponse" style="min-height: 100px;">Awaiting Judgement...</div>
+        <h2>Artistic Swimming Figure Judging Bot 🤖</h2>
+        <div id="serverResponse" style="min-height: 100px;">Awaiting Judgement...</div>
 
-        <script>
-        let extractedFrames = [];
+        <script>
+        let extractedFrames = [];
         let videoFileToUpload = null;
         let selectedFrameIndices = new Set(); 
 
@@ -336,26 +338,26 @@ def index():
         }};
 
         // --- Event Listener for Upload Button ---
-        document.getElementById("uploadBtn").onclick = async () => {{
+        document.getElementById("uploadBtn").onclick = async () => {{
             let fileToProcess = videoFileToUpload || document.getElementById("videoInput").files[0];
 
-            if (!fileToProcess) {{ 
+            if (!fileToProcess) {{ 
                 document.getElementById("serverResponse").innerHTML = "Error: No video file is selected or loaded.";
                 return; 
             }}
             document.getElementById("serverResponse").innerHTML = "Extracting frames...";
 
-            const formData = new FormData();
-            formData.append("video", fileToProcess);
+            const formData = new FormData();
+            formData.append("video", fileToProcess);
 
-            const res = await fetch("/extract_frames", {{ method:"POST", body: formData }});
-            const data = await res.json();
+            const res = await fetch("/extract_frames", {{ method:"POST", body: formData }});
+            const data = await res.json();
 
-            extractedFrames = data.frames || [];
+            extractedFrames = data.frames || [];
             selectedFrameIndices.clear(); 
-            renderFrames();
+            renderFrames();
             document.getElementById("serverResponse").innerHTML = "Frames extracted. Select key frames using the 'Focus' button and press 'Send' to continue.";
-        }};
+        }};
 
         // --- Handle file input change ---
         document.getElementById("videoInput").onchange = () => {{
@@ -366,60 +368,60 @@ def index():
         }};
 
         // --- Render Frames Function ---
-        function renderFrames() {{
-            const container = document.getElementById("framesContainer");
-            container.innerHTML = "";
-            
+        function renderFrames() {{
+            const container = document.getElementById("framesContainer");
+            container.innerHTML = "";
+            
             extractedFrames.forEach((f, idx) => {{
-                const div = document.createElement("div");
-                div.className = "frame-box";
+                const div = document.createElement("div");
+                div.className = "frame-box";
                 div.id = `frame-box-${{idx}}`;
                 
-                div.innerHTML = `
-                    <img src="${{f.url}}" /> 
-                    <div class="frame-info">Time: ${{f.timestamp_sec}}s</div> 
+                div.innerHTML = `
+                    <img src="${{f.url}}" /> 
+                    <div class="frame-info">Time: ${{f.timestamp_sec}}s</div> 
                     <button id="focus-btn-${{idx}}" class="focus-btn" onclick="toggleFrameFocus(${{idx}})">Focus / Select</button>
-                `;
-                container.appendChild(div);
-            }});
-        }}
+                `;
+                container.appendChild(div);
+            }});
+        }}
 
         // --- Submit Judgement Function ---
-        document.getElementById("submitSelected").onclick = async () => {{
+        document.getElementById("submitSelected").onclick = async () => {{
             const selectedIndices = Array.from(selectedFrameIndices).sort((a, b) => a - b);
-            if (selectedIndices.length === 0) {{ alert("Select at least one frame using the Focus button."); return; }}
+            if (selectedIndices.length === 0) {{ alert("Select at least one frame using the Focus button."); return; }}
             document.getElementById("serverResponse").innerHTML = "Sending frames for AI Judgement... Please wait.";
 
 
-            const selectedURLs = selectedIndices.map(idx => {{
-                const f = extractedFrames[idx];
-                return f.url;
-            }});
+            const selectedURLs = selectedIndices.map(idx => {{
+                const f = extractedFrames[idx];
+                return f.url;
+            }});
 
-            const formData = new FormData();
-            formData.append("figure_name", document.getElementById("figureSelect").value);
-            formData.append("observations", document.getElementById("obsBox").value);
-            formData.append("frame_urls_json", JSON.stringify(selectedURLs));
+            const formData = new FormData();
+            formData.append("figure_name", document.getElementById("figureSelect").value);
+            formData.append("observations", document.getElementById("obsBox").value);
+            formData.append("frame_urls_json", JSON.stringify(selectedURLs));
 
-            const res = await fetch("/judge_frames", {{ method:"POST", body: formData }});
-            const data = await res.json();
-            
-            const serverResponseDiv = document.getElementById("serverResponse");
-            try {{
-                serverResponseDiv.innerHTML = marked.parse(data.llm_output || "");
-            }} catch (e) {{
-                serverResponseDiv.textContent = JSON.stringify(data, null, 2);
-                console.error("Error parsing LLM output:", e);
-            }}
-        }};
+            const res = await fetch("/judge_frames", {{ method:"POST", body: formData }});
+            const data = await res.json();
+            
+            const serverResponseDiv = document.getElementById("serverResponse");
+            try {{
+                serverResponseDiv.innerHTML = marked.parse(data.llm_output || "");
+            }} catch (e) {{
+                serverResponseDiv.textContent = JSON.stringify(data, null, 2);
+                console.error("Error parsing LLM output:", e);
+            }}
+        }};
         
         // Ensure initial button state is checked when the page loads
         document.addEventListener('DOMContentLoaded', checkReadyState);
-        </script>
+        </script>
     </div>
-    </body>
-    </html>
-    """
+    </body>
+    </html>
+    """
 
 
 # ------------------------
@@ -482,32 +484,47 @@ async def judge_frames(
     except json.JSONDecodeError as e:
         return JSONResponse(status_code=500, content={"llm_output": f"Error: Invalid JSON in as_judging.json: {e}"})
 
-    llm_input_data = {
-        "role": "user",
-        "figure_name": figure_name,
-        "observations": observations,
-        "key_frames": [{"url": url} for url in frame_urls],
-        "system_prompt_content": prompt_template.get("content", []) 
-    }
+    # ----------------------------------------------------
+    # --- MODIFIED 2 & 3: Updated to standard Vision API call structure ---
+    # ----------------------------------------------------
 
+    # 1. Construct the message content list (Text + Images)
+    messages_content = []
+
+    # Add the text prompt first
+    prompt_text = (
+        f"Analyze the sequence of images for the Artistic Swimming Figure: '{figure_name}'. "
+        f"Observations provided by the user: '{observations}'. "
+        f"Reference the following judging guidelines: {prompt_template.get('content', 'No guidelines provided')}. "
+        "Provide a technical assessment and a score out of 10. "
+        "Format the response strictly using Markdown."
+    )
+    messages_content.append({"type": "text", "text": prompt_text})
+
+    # Add the images as PUBLIC URL references
+    for url in frame_urls:
+        messages_content.append({
+            "type": "image_url",
+            # CRITICAL: Using your actual Render domain for the Vision API to access the images
+            "image_url": {"url": f"https://synchro-judging-bot.onrender.com{url}"} 
+        })
+    
     try:
-        completion = client.responses.create(
-            model=MODEL_NAME,
-            input=[
+        completion = client.chat.completions.create(
+            model=MODEL_NAME, # Now using "gpt-4o"
+            messages=[
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": json.dumps(llm_input_data)
-                        }
-                    ]
+                    "content": messages_content
                 }
             ]
         )
-        output_text = completion.output_text
+        # Access the response content correctly
+        output_text = completion.choices[0].message.content
     except Exception as e:
         output_text = f"LLM call failed: {type(e).__name__}: {e}"
+
+    # ----------------------------------------------------
 
     return {
         "llm_output": output_text,
