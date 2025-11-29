@@ -1,0 +1,15 @@
+# The 'services' key defines all the services to deploy (we only have one)
+services:
+  - type: web
+    name: synchro-judging-bot # Use the name you chose in the Render dashboard
+    env: docker # Tells Render to use the Dockerfile
+    # Command is optional if defined in Dockerfile, but good practice to include
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    # The port the app runs on inside the container
+    envVars:
+      - key: PORT
+        value: "8000"
+      # IMPORTANT: Render will read your OPENAI_API_KEY from environment variables 
+      # you set in the dashboard, but you should list it here for completeness
+      - key: OPENAI_API_KEY
+        sync: false # Set to false so it won't expose the value publicly

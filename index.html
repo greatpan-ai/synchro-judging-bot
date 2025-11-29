@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Artistic Swimming Analyzer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .frame-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .frame-box {
+            flex: 1 1 calc(33.33% - 10px);
+            box-sizing: border-box;
+            text-align: center;
+            border: 1px solid #ccc;
+            padding: 5px;
+        }
+        .frame-box img {
+            width: 100%;
+            height: auto;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .frame-controls {
+            font-size: 0.9em;
+        }
+        #serverResponse table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+        #serverResponse th, #serverResponse td { border: 1px solid #666; padding: 6px; text-align: left; }
+        #serverResponse th { background-color: #eee; }
+        #serverResponse ul { padding-left: 20px; }
+        #serverResponse p, #serverResponse li { margin: 5px 0; }
+        #serverResponse h1, #serverResponse h2, #serverResponse h3 { margin: 10px 0 5px 0; }
+        #serverResponse strong { color: #333; }
+        #obsBox { width: 300px; }
+        select { margin-right: 10px; }
+    </style>
+</head>
+<body>
+
+<h2>Upload Video</h2>
+<input type="file" id="videoInput" accept="video/*">
+<button id="uploadBtn">Upload</button>
+<button id="sampleBtn">Use Sample Video</button>
+
+<h2>Extracted Frames</h2>
+<div id="framesContainer" class="frame-grid"></div>
+
+<h2>Observations (optional)</h2>
+<input type="text" id="obsBox" placeholder="Enter short observations" />
+
+<h2>Select Figure & Judge</h2>
+<select id="figureSelect">
+    <option>301 Barracuda</option>
+    <option>309 Reverse Barracuda</option>
+    <option>360 Catalina</option>
+    <option>Double Barracuda</option>
+    <option>Split Pike</option>
+    <option>Other</option>
+</select>
+
+<select id="judgeSelect">
+    <option>Judge A</option>
+    <option>Judge B</option>
+    <option>Judge C</option>
+    <option>Judge D</option>
+</select>
+
+<button id="submitSelected" style="margin-top: 20px;">Send Selected Frames</button>
+
+<h2>Server Response</h2>
+<div id="serverResponse" style="border:1px solid #ccc; padding:10px; background:#f9f9f9;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+    let extractedFrames = [];
+
+    // --- Upload video ---
+    document.getElementById("uploadBtn").onclick = async () => {
+        const fileInput = document.getElementById("videoInput");
+        if (!fileInput.files.length) { alert("Select a video file first."); return; }
+        await uploadVideo(fileInput.files[0]);
+    };
+
+    // --- Sample video ---
+    document.getElementById("sampleBtn").onclick = async () => {
+        const sampleUrl = "sample_video.mp4"; // Provide this video in your static folder
+        const response = await fetch(sampleUrl);
+        const blob = await response.blob();
+        await uploadVideo(new File([blob], "sample_video.mp4", { type: "video/mp4" }));
+    };
+
+    async function uploadVideo(file) {
+        const formData = new FormData();
+        formData.append("video", file);
+
+        const response = await fetch("/extract_frames", { method: "POST", body: formData });
+        const data = await response.json();
+        extractedFrames = (data.frames || []).filter(f => f && f.image_base64 && f.image_base64.length > 100);
+        renderFrames();
+    }
+
+    // --- Show frames ---
+    function renderFrames() {
+        const container = document.getElementById("framesContainer");
+        container.innerHTML = "";
+        extractedFrames.forEach((item, idx) => {
+            const div = document.createElement("div");
+            div.className = "frame-box";
+            div.innerHTML = `
+                <img src="${item.image_base64}" />
+                <div class="frame-controls">
+                    <label><input type="checkbox" class="frame-checkbox" value="${idx}"> Select</label><br/>
+                    <small>Time: ${item.timestamp_sec}s</small>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    // --- Send selected frames ---
+    document.getElementById("submitSelected").onclick = async () => {
+        const checkboxes = document.querySelectorAll(".frame-checkbox:checked");
+        if (!checkboxes.length) { alert("Select at least one frame."); return; }
+
+        const selectedBase64 = Array.from(checkboxes).map(cb => {
+            const f = extractedFrames[parseInt(cb.value)];
+            return f.image_base64.split(",")[1];
+        });
+
+        const formData = new FormData();
+        formData.append("figure_name", document.getElementById("figureSelect").value);
+        formData.append("observations", document.getElementById("obsBox").value);
+        formData.append("images_json", JSON.stringify(selectedBase64));
+        formData.append("judge_name", document.getElementById("judgeSelect").value);
+
+        const res = await fetch("/judge_frames", { method: "POST", body: formData });
+        const result = await res.json();
+        document.getElementById("serverResponse").innerHTML = marked.parse(result.llm_output || "");
+    };
+</script>
+
+</body>
+</html>
