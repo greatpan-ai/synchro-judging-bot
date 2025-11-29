@@ -3,7 +3,8 @@ import cv2
 import tempfile
 import json
 import uuid
-import time # Added for the optional sleep/debug print
+import time 
+import base64 # <<< CRITICAL IMPORT FOR BASE64 ENCODING
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,9 +16,7 @@ from typing import List
 # Config
 # ------------------------
 client = OpenAI()
-# --- MODIFIED 1: Changed to a valid OpenAI Vision Model ---
 MODEL_NAME = "gpt-4o"
-# --------------------------------------------------------
 FRAME_DIR = "temp_frames"
 STATIC_ROOT_DIR = os.path.join(os.getcwd(), "static")
 VIDEO_DIR = os.path.join(STATIC_ROOT_DIR, "videos")
@@ -45,8 +44,7 @@ app.mount("/static", StaticFiles(directory=STATIC_ROOT_DIR), name="static")
 
 
 # ------------------------
-# Frontend HTML 🎨
-# (No changes to the HTML/JavaScript logic were needed here)
+# Frontend HTML 🎨 
 # ------------------------
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -425,9 +423,8 @@ def index():
     </html>
     """
 
-
 # ------------------------
-# Extract frames Endpoint
+# Extract frames Endpoint (Optimized with Resizing and Sliding Window)
 # ------------------------
 @app.post("/extract_frames")
 async def extract_frames(video: UploadFile = File(...)):
@@ -444,7 +441,7 @@ async def extract_frames(video: UploadFile = File(...)):
     
     # Target number of frames to keep
     target_frames = 6
-    # Calculate step size to cover the entire video, adjusted for the sliding window
+    # Calculate step size to cover the entire video (roughly 10 steps max)
     step = max(1, total_frames // 10) 
 
     frames = []
@@ -455,26 +452,24 @@ async def extract_frames(video: UploadFile = File(...)):
 
         if count % step == 0:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Only save frame if there is sufficient motion/detail
+            # Only save frame if there is sufficient motion/detail (gray.std() >= 10)
             if gray.std() >= 10:
                 
-                # --- NEW LOGIC: Resize the frame for smaller file size ---
+                # --- RESIZE LOGIC ---
                 height, width = frame.shape[:2]
                 resized_frame = frame
                 if width > MAX_WIDTH:
-                    # Calculate new dimensions while maintaining aspect ratio
                     ratio = MAX_WIDTH / width
                     new_width = MAX_WIDTH
                     new_height = int(height * ratio)
                     
-                    # Resize the frame using interpolation
                     resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
                 # --- END RESIZE LOGIC ---
                 
                 filename = f"{uuid.uuid4().hex}.jpg"
                 filepath = os.path.join(FRAME_DIR, filename)
                 
-                # Save the frame using JPEG compression quality 85
+                # Save the frame using JPEG compression quality 85 (smaller file size)
                 cv2.imwrite(filepath, resized_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
                 new_frame_data = {
@@ -482,7 +477,7 @@ async def extract_frames(video: UploadFile = File(...)):
                     "timestamp_sec": round(count/fps,2)
                 }
                 
-                # --- NEW LOGIC: Fixed-Size Sliding Window (Keeps the latest frames) ---
+                # --- SLIDING WINDOW LOGIC (Keeps the latest frames) ---
                 if len(frames) >= target_frames:
                     # Remove the OLDEST frame (index 0)
                     frames.pop(0) 
@@ -495,12 +490,11 @@ async def extract_frames(video: UploadFile = File(...)):
 
     cap.release()
     os.remove(path)
-    # The returned 'frames' list contains the last 'target_frames' extracted.
     return {"frames": frames}
 
 
 # ------------------------
-# Judge frames with LLM Endpoint
+# Judge frames with LLM Endpoint (FINAL - USING BASE64 ENCODING)
 # ------------------------
 @app.post("/judge_frames")
 async def judge_frames(
@@ -518,8 +512,8 @@ async def judge_frames(
     except json.JSONDecodeError as e:
         return JSONResponse(status_code=500, content={"llm_output": f"Error: Invalid JSON in as_judging.json: {e}"})
 
-    # 1. Construct the message content list (Text + Images)
-    messages_content = []
+    # 1. Initialize message content list
+    base64_content = []
 
     # Add the text prompt first
     prompt_text = (
@@ -529,42 +523,54 @@ async def judge_frames(
         "Provide a technical assessment and a score out of 10. "
         "Format the response strictly using Markdown."
     )
-    messages_content.append({"type": "text", "text": prompt_text})
+    base64_content.append({"type": "text", "text": prompt_text})
 
-    # Add the images as PUBLIC URL references
+    # 2. Iterate through URLs, read file locally, and encode to Base64
     for url in frame_urls:
-        messages_content.append({
+        # Convert the public URL path back to the local file path
+        path = url.replace("/frames/", f"{FRAME_DIR}/")
+
+        try:
+            with open(path, "rb") as image_file:
+                # Read file, encode to Base64, and decode to UTF-8 string
+                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+        except FileNotFoundError:
+            print(f"File not found for Base64 encoding: {path}")
+            continue 
+
+        # 3. Add the Base64 data to the content list
+        base64_content.append({
             "type": "image_url",
-            # CRITICAL: Using your actual Render domain for the Vision API to access the images
-            # NOTE: This line MUST match your Render URL exactly.
-            "image_url": {"url": f"https://synchro-judging-bot.onrender.com{url}"} 
+            "image_url": {
+                # Format required by OpenAI: data:image/jpeg;base64,<data>
+                "url": f"data:image/jpeg;base64,{encoded_image}" 
+            }
         })
     
     # --- OPTIONAL: Debug Print and Delay ---
-    # This helps confirm the exact URLs being sent and may slightly alleviate race conditions
-    print("--- DEBUG: URLs sent to OpenAI ---")
-    for item in messages_content:
+    print("--- DEBUG: First few characters of Base64 content sent to OpenAI ---")
+    for item in base64_content:
         if item.get('type') == 'image_url':
-            print(item['image_url']['url'])
-    print("-----------------------------------")
+            print(item['image_url']['url'][:50] + "...") 
+    print("-------------------------------------------------------------------")
     time.sleep(1) 
     # --- END OPTIONAL ---
-    
+
     try:
         completion = client.chat.completions.create(
-            model=MODEL_NAME, # Now using "gpt-4o"
+            model=MODEL_NAME, 
             messages=[
                 {
                     "role": "user",
-                    "content": messages_content
+                    "content": base64_content # Use the new base64 list here
                 }
             ],
             max_tokens=2000,
         )
-        # Access the response content correctly
         output_text = completion.choices[0].message.content
     except Exception as e:
         output_text = f"LLM call failed: {type(e).__name__}: {e}"
+        print(f"FATAL LLM ERROR: {e}")
 
     return {
         "llm_output": output_text,
