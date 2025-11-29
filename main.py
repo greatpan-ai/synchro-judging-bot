@@ -520,6 +520,7 @@ async def judge_frames(
     
     frame_urls: List[str] = json.loads(frame_urls_json)
 
+    # Load prompt template from JSON file
     try:
         with open("as_judging.json") as f:
             prompt_template = json.load(f)
@@ -528,10 +529,8 @@ async def judge_frames(
     except json.JSONDecodeError as e:
         return JSONResponse(status_code=500, content={"llm_output": f"Error: Invalid JSON in as_judging.json: {e}"})
 
-    # 1. Initialize message content list (will contain strings and genai.types.Part objects)
+    # 1. Prepare text prompt
     gemini_content = []
-
-    # Add the text prompt first
     prompt_text = (
         f"Analyze the sequence of images for the Artistic Swimming Figure: '{figure_name}'. "
         f"Observations provided by the user: '{observations}'. "
@@ -545,36 +544,35 @@ async def judge_frames(
     # 2. Iterate through URLs, read file locally, and create genai.types.Part objects
     files_processed = 0
     for url in frame_urls:
-        # Convert the public URL path back to the local file path (e.g., /frames/xyz.jpg -> temp_frames/xyz.jpg)
+        # Convert the public URL path back to the local file path
         path = url.replace("/frames/", f"{FRAME_DIR}/")
 
         try:
             with open(path, "rb") as image_file:
                 image_bytes = image_file.read()
                 
-                # Create the Gemini Part object directly from file bytes
+                # Create the Gemini Part object
                 image_part = genai.types.Part.from_bytes(
                     data=image_bytes,
-                    mime_type='image/jpeg' # Mime type must match the file type
+                    mime_type='image/jpeg'
                 )
                 gemini_content.append(image_part)
                 files_processed += 1
         except FileNotFoundError:
             print(f"File not found for Gemini encoding: {path}")
-            # Do not return yet, just skip this missing image
             continue 
 
-    # --- GEMINI API Call ---
+    # --- Pre-API Check ---
     print(f"Sending {files_processed} images and prompt to Gemini...")
-    
-    # Check if any images were successfully loaded before calling the API
     if files_processed == 0 and len(frame_urls) > 0:
         return JSONResponse(status_code=400, content={"llm_output": "Error: Selected frames were not found on the server disk. Try re-extracting frames."})
 
+    # --- GEMINI API Call & Response Handling ---
+    output_text = ""
     try:
         completion = client.models.generate_content(
             model=MODEL_NAME, 
-            contents=gemini_content, # Pass the list of strings and Part objects
+            contents=gemini_content,
             config=genai.types.GenerateContentConfig(
                 max_output_tokens=2000 
             )
@@ -582,13 +580,31 @@ async def judge_frames(
         
         output_text = completion.text
         
-        # --- NEW DEBUG PRINT TO CONFIRM RESPONSE RECEIVED ---
+        # Check if the output is blank (failure or safety block)
         if not output_text:
-            print("WARNING: Gemini returned an empty response string. Check safety settings or prompt.")
-            output_text = "The AI returned a blank response. Try running the process again."
+            # Check the actual candidate list for a blockage reason
+            if completion.candidates and completion.candidates[0].finish_reason.name == 'SAFETY':
+                 # Extract and display the safety ratings
+                 safety_details = "\n".join([
+                     f"* **{r.category.name.replace('HARM_CATEGORY_', '').replace('_', ' ').title()}**: {r.probability.name}"
+                     for r in completion.candidates[0].safety_ratings
+                 ])
+                 
+                 print(f"WARNING: Gemini blocked the response due to safety filters.")
+                 print(f"SAFETY REASON:\n{safety_details}")
+                 
+                 output_text = (
+                     "## 🚨 Response Blocked by Safety Filters\n\n"
+                     "The AI generated content that was flagged by safety filters. "
+                     "This can happen with multimodal inputs. Try adjusting your prompt or selecting different frames. \n\n"
+                     f"### Block Details:\n{safety_details}"
+                 )
+            else:
+                # Catch other non-safety related blank responses
+                print("WARNING: Gemini returned a blank response string for an unknown reason.")
+                output_text = "The AI returned a blank response. Try running the process again."
         else:
             print(f"Gemini API call successful. First 100 chars: {output_text[:100]}...") 
-        # --- END NEW DEBUG PRINT ---
 
     except APIError as e:
         output_text = f"Gemini API call failed (APIError). Status: {e.status_code}. Details: {e.message}"
