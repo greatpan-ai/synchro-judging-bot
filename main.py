@@ -55,9 +55,6 @@ app.add_middleware(
 # Only mount static directory for videos and HTML assets
 app.mount("/static", StaticFiles(directory=STATIC_ROOT_DIR), name="static")
 
-# ------------------------
-# Frontend HTML (Incorporating updates 2 through 11)
-# ------------------------
 @app.get("/", response_class=HTMLResponse)
 def index():
     return f"""
@@ -106,14 +103,6 @@ def index():
             }}
             button:hover {{
                 background-color: #0056b3; /* Darker Blue */
-            }}
-            /* Remove specific color override for Use Sample, it now uses the primary blue */
-            #useSampleBtn {{
-                background-color: #007bff;
-                color: white;
-            }}
-            #useSampleBtn:hover {{
-                background-color: #0056b3;
             }}
             /* Disabled button style */
             button[disabled] {{
@@ -194,6 +183,12 @@ def index():
                 gap: 10px;
                 margin-bottom: 20px;
             }}
+            /* Specific style for the checkbox/label group */
+            #sampleGroup {{
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }}
 
 
             /* AI JUDGEMENT RESPONSE STYLES */
@@ -258,11 +253,22 @@ def index():
             Your browser does not support the video tag.
         </video>
 
-        <div class="control-group">
-            <input type="file" id="videoInput" accept="video/*" style="margin-bottom: 0; width: auto;">
-            <button id="uploadBtn" disabled>Upload Video</button>
-            <button id="useSampleBtn">Use Sample Video</button>
+        <div class="control-group" style="align-items: flex-start; flex-direction: column;">
+            
+            <div id="videoSelectionGroup" class="control-group">
+                <div id="sampleGroup">
+                    <input type="checkbox" id="useSampleCheck">
+                    <label for="useSampleCheck">Use Sample Video</label>
+                </div>
+
+                <input type="file" id="videoInput" accept="video/*" style="margin-bottom: 0; width: auto;">
+            </div>
+
+            <button id="processBtn" disabled style="margin-left: 0; margin-top: 10px; width: 300px;">
+                Process Video
+            </button>
         </div>
+
 
         <hr/>
         <h2>Select Key Frames 📸</h2>
@@ -382,54 +388,43 @@ def index():
         <div id="attribution">Figure Judging Bot V1.0 was developed using ChatGPT 5.1 and trained on the Artistic Swimming Manual for Judges, Technical Controllers, Referees, and Coaches (2022–2025).</div>
 
         <script>
-        // *** FRAME DATA NOW STORES BASE64 STRING ***
-        let extractedFrames = []; // [{{ base64_data: '...', timestamp_sec: '...' }}, ...]
-        let videoFileToUpload = null;
-        let selectedFrameIndices = new Set(); 
+        // *** VARIABLE DEFINITIONS ***
+        let extractedFrames = [];
+        let videoFileToProcess = null; // Holds the File object for upload or sample
+        let selectedFrameIndices = new Set();
+        const videoInput = document.getElementById("videoInput");
+        const useSampleCheck = document.getElementById("useSampleCheck");
+        const processBtn = document.getElementById("processBtn");
+        const serverResponse = document.getElementById("serverResponse");
 
+
+        // --- CORE FUNCTION: Checks state and enables the Process button ---
         function checkReadyState() {{
-            const uploadBtn = document.getElementById("uploadBtn");
-            const fileSelected = document.getElementById("videoInput").files.length > 0;
-            const sampleReady = videoFileToUpload !== null;
-
-            // Only enable Upload button if a file is selected 
-            uploadBtn.disabled = !fileSelected;
-        }}
-
-        function toggleFrameFocus(frameIndex) {{
-            const frameBox = document.getElementById(`frame-box-${{frameIndex}}`);
-            const focusBtn = document.getElementById(`focus-btn-${{frameIndex}}`);
-
-            if (selectedFrameIndices.has(frameIndex)) {{
-                selectedFrameIndices.delete(frameIndex);
-                frameBox.classList.remove('focused');
-                focusBtn.classList.remove('selected');
-                // UPDATE 2: Text changed from "Focus / Select" to "Select"
-                focusBtn.textContent = 'Select'; 
-            }} else {{
-                selectedFrameIndices.add(frameIndex);
-                frameBox.classList.add('focused');
-                focusBtn.classList.add('selected');
-                focusBtn.textContent = 'Selected';
+            const fileSelected = videoInput.files.length > 0;
+            const useSample = useSampleCheck.checked;
+            
+            // Enable button if a file is selected OR the sample box is checked
+            processBtn.disabled = !(fileSelected || useSample);
+            
+            // Disable file input if sample is checked
+            videoInput.disabled = useSample;
+            
+            // Reset file input value if sample is checked
+            if (useSample) {{
+                videoInput.value = '';
             }}
         }}
 
         // --- CORE FUNCTION: Extracts frames and renders them ---
         async function runFrameExtraction(fileToProcess) {{
-            const uploadBtn = document.getElementById("uploadBtn");
-            const useSampleBtn = document.getElementById("useSampleBtn");
-            const serverResponse = document.getElementById("serverResponse");
-
             if (!fileToProcess) {{ 
                 serverResponse.innerHTML = "Error: No video file is selected or loaded.";
                 return; 
             }}
             
-            // ** START LOADING STATE ** (Handles both Upload and Sample Button text)
-            uploadBtn.disabled = true;
-            useSampleBtn.disabled = true;
-            uploadBtn.textContent = 'Extracting key frames...'; // UPDATE 11: Changed text
-            useSampleBtn.textContent = 'Extracting key frames...'; // UPDATE 10: Changed text
+            // ** START LOADING STATE **
+            processBtn.disabled = true;
+            processBtn.textContent = 'Extracting key frames...'; // Update button text
             serverResponse.innerHTML = "<h3>⏳ Extracting key frames from video... please wait.</h3>";
 
             const formData = new FormData();
@@ -440,59 +435,55 @@ def index():
                 const data = await res.json();
 
                 // ** END LOADING STATE **
-                uploadBtn.disabled = false;
-                useSampleBtn.disabled = false;
-                uploadBtn.textContent = 'Upload Video'; // UPDATE 11: Restore text
-                useSampleBtn.textContent = 'Use Sample Video'; // UPDATE 10: Restore text
+                processBtn.disabled = false;
+                processBtn.textContent = 'Process Video'; // Restore button text
 
                 extractedFrames = data.frames || [];
                 selectedFrameIndices.clear(); 
                 renderFrames();
                 serverResponse.innerHTML = "Frames extracted. Select key frames using the 'Select' button and press 'Send to Judging Bot' to continue.";
             }} catch (error) {{
-                uploadBtn.disabled = false;
-                useSampleBtn.disabled = false;
-                uploadBtn.textContent = 'Upload Video'; 
-                useSampleBtn.textContent = 'Use Sample Video';
+                processBtn.disabled = false;
+                processBtn.textContent = 'Process Video'; // Restore button text
                 serverResponse.innerHTML = `<h3>❌ Error during frame extraction: ${{error.message}}</h3>`;
                 console.error(error);
             }}
         }}
 
+        // --- Event Listener for Checkbox/Input changes ---
+        videoInput.onchange = checkReadyState;
+        useSampleCheck.onchange = checkReadyState;
 
-        // --- Event Listener for Sample Button (UPDATE 10: Now runs extraction immediately) ---
-        document.getElementById("useSampleBtn").onclick = async () => {{
-            const serverResponse = document.getElementById("serverResponse");
-            serverResponse.innerHTML = "Loading sample video file...";
-            
-            try {{
-                const response = await fetch('{SAMPLE_VIDEO_PATH}');
-                const blob = await response.blob();
-                
-                // Set the file object directly for processing
-                const sampleFile = new File([blob], "sample_video.mp4", {{type: "video/mp4"}});
-                document.getElementById("videoInput").value = null; // Clear manual input
-                
-                await runFrameExtraction(sampleFile); // Run extraction immediately
-            }} catch (e) {{
-                serverResponse.innerHTML = `Error loading sample video. Ensure the file exists.`;
-                console.error("Error fetching sample video:", e);
-                checkReadyState();
+        // --- Event Listener for Unified Process Button ---
+        processBtn.onclick = async () => {{
+            const useSample = useSampleCheck.checked;
+            let fileToProcess = null;
+
+            if (useSample) {{
+                // Logic for fetching the sample video
+                serverResponse.innerHTML = "Loading sample video file...";
+                try {{
+                    const response = await fetch('{SAMPLE_VIDEO_PATH}');
+                    const blob = await response.blob();
+                    fileToProcess = new File([blob], "sample_video.mp4", {{type: "video/mp4"}});
+                }} catch (e) {{
+                    serverResponse.innerHTML = `Error loading sample video. Ensure the file exists.`;
+                    console.error("Error fetching sample video:", e);
+                    checkReadyState();
+                    return;
+                }}
+            }} else if (videoInput.files.length > 0) {{
+                // Logic for uploaded video
+                fileToProcess = videoInput.files[0];
+            }}
+
+            if (fileToProcess) {{
+                await runFrameExtraction(fileToProcess);
+            }} else {{
+                serverResponse.innerHTML = "Please select a file or check 'Use Sample Video'.";
             }}
         }};
-
-        // --- Event Listener for Upload Button (UPDATE 11: Text updated, calls core function) ---
-        document.getElementById("uploadBtn").onclick = async () => {{
-            let fileToProcess = document.getElementById("videoInput").files[0];
-            await runFrameExtraction(fileToProcess);
-        }};
-
-        // --- Handle file input change ---
-        document.getElementById("videoInput").onchange = () => {{
-            videoFileToUpload = null; 
-            checkReadyState();
-        }};
-
+        
         // --- Render Frames Function ---
         function renderFrames() {{
             const container = document.getElementById("framesContainer");
@@ -507,12 +498,31 @@ def index():
                 div.innerHTML = `
                     <img src="data:image/jpeg;base64,${{f.base64_data}}" /> 
                     <div class="frame-info">Time: ${{f.timestamp_sec}}s</div> 
-                    <button id="focus-btn-${{idx}}" class="focus-btn" onclick="toggleFrameFocus(${{idx}})">Select</button> `;
+                    <button id="focus-btn-${{idx}}" class="focus-btn" onclick="toggleFrameFocus(${{idx}})">Select</button>
+                `;
                 container.appendChild(div);
             }});
         }}
+        
+        function toggleFrameFocus(frameIndex) {{
+            const frameBox = document.getElementById(`frame-box-${{frameIndex}}`);
+            const focusBtn = document.getElementById(`focus-btn-${{frameIndex}}`);
 
-        // --- Submit Judgement Function (Text Updated) ---
+            if (selectedFrameIndices.has(frameIndex)) {{
+                selectedFrameIndices.delete(frameIndex);
+                frameBox.classList.remove('focused');
+                focusBtn.classList.remove('selected');
+                focusBtn.textContent = 'Select'; 
+            }} else {{
+                selectedFrameIndices.add(frameIndex);
+                frameBox.classList.add('focused');
+                focusBtn.classList.add('selected');
+                focusBtn.textContent = 'Selected';
+            }}
+        }}
+
+
+        // --- Submit Judgement Function ---
         document.getElementById("submitSelected").onclick = async () => {{
             const selectedIndices = Array.from(selectedFrameIndices).sort((a, b) => a - b);
             const submitBtn = document.getElementById("submitSelected");
@@ -523,8 +533,7 @@ def index():
             // ** START LOADING STATE **
             submitBtn.disabled = true;
             submitBtn.textContent = 'AI Judging in Progress...';
-            serverResponseDiv.innerHTML = "<h3>🤖 Sending frames for Judgement... Please wait.</h3>";
-
+            serverResponseDiv.innerHTML = "<h3>🤖 Sending frames to Judging Bot for Judgement... Please wait.</h3>"; 
 
             const selectedBase64Data = selectedIndices.map(idx => {{
                 return extractedFrames[idx].base64_data;
@@ -532,7 +541,6 @@ def index():
 
             const formData = new FormData();
             formData.append("figure_name", document.getElementById("figureSelect").value);
-            // UPDATE 8: Removed formData.append("observations", ...)
             formData.append("frame_base64_json", JSON.stringify(selectedBase64Data));
 
             try {{
@@ -541,20 +549,18 @@ def index():
                 
                 // ** END LOADING STATE **
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Send to Judging Bot'; // UPDATE 6: Restore text
+                submitBtn.textContent = 'Send to Judging Bot'; 
 
                 try {{
-                    // Note: The LLM output MUST use the HTML <table> format as instructed.
                     serverResponseDiv.innerHTML = marked.parse(data.llm_output || "");
                 }} catch (e) {{
-                    // Fallback for parsing errors
                     serverResponseDiv.textContent = JSON.stringify(data, null, 2);
                     console.error("Error parsing LLM output:", e);
                 }}
             }} catch (error) {{
                 // ** HANDLE ERROR **
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Send to Judging Bot'; // UPDATE 6: Restore text
+                submitBtn.textContent = 'Send to Judging Bot'; 
                 serverResponseDiv.innerHTML = `<h3>❌ Network Error: Could not reach the server.</h3>`;
                 console.error("Fetch error during judgement submission:", error);
             }}
