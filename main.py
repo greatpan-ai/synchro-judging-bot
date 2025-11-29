@@ -56,11 +56,10 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=STATIC_ROOT_DIR), name="static")
 
 # ------------------------
-# Frontend HTML (MODIFIED for Base64 frame handling)
+# Frontend HTML (SYNTAX FIXED: All literal {} changed to {{}})
 # ------------------------
 @app.get("/", response_class=HTMLResponse)
 def index():
-    # NOTE: The frontend JS is updated to handle Base64 image data instead of file URLs.
     return f"""
     <!DOCTYPE html>
     <html>
@@ -68,32 +67,176 @@ def index():
         <title>Artistic Swimming Analyzer</title>
         <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
         <style>
-            /* Your CSS styles remain here, removed for brevity */
-            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background-color: #f4f7f6; color: #333; }}
-            .container {{ max-width: 1200px; margin: 20px auto; padding: 20px; background: white; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); border-radius: 8px; }}
-            h2 {{ color: #007bff; border-bottom: 2px solid #e9ecef; padding-bottom: 5px; margin-top: 25px; }}
-            h3 {{ margin-top: 15px; color: #555; }}
-            button {{ background-color: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; transition: background-color 0.3s; margin-left: 10px; }}
-            button:hover {{ background-color: #218838; }}
-            #useSampleBtn {{ background-color: #ffc107; color: #333; }}
-            #useSampleBtn:hover {{ background-color: #e0a800; }}
-            button[disabled] {{ background-color: #cccccc !important; cursor: not-allowed; }}
-            #headerLogo {{ width: 100%; max-height: 200px; height: auto; object-fit: fill; display: block; margin: 0 auto 20px auto; }}
-            #framesContainer {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px; }}
-            .frame-box {{ display: flex; flex-direction: column; justify-content: space-between; align-items: center; border: 2px solid #cce5ff; border-radius: 8px; background-color: #eaf3ff; padding: 10px; transition: transform 0.2s, box-shadow 0.2s; }}
-            .frame-box.focused {{ border-color: #007bff; box-shadow: 0 0 15px rgba(0, 123, 255, 0.5); transform: scale(1.05); background-color: #ccddff; z-index: 10; }}
-            img {{ width: 100%; height: auto; margin-bottom: 5px; border: 1px solid #007bff; border-radius: 4px; }}
-            .frame-info {{ font-size: 0.8em; color: #666; margin: 5px 0; }}
-            .focus-btn {{ background-color: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; width: 100%; text-align: center; font-size: 0.9em; margin-top: 5px; transition: background-color 0.2s; }}
-            .focus-btn.selected {{ background-color: #dc3545; }}
-            .control-group {{ display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }}
-            #serverResponse {{ border: 2px solid #ffc107; padding: 15px; background: #fffbe6; border-radius: 6px; }}
-            #serverResponse table {{ border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.9em; }}
-            #serverResponse th, #serverResponse td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
-            #serverResponse th {{ background-color: #007bff; color: white; }}
-            input[type="file"], textarea, select {{ padding: 10px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 10px; width: 100%; box-sizing: border-box; }}
-            #figureSelect {{ width: 250px; }}
-            #sampleVideoPlayer {{ width: 100%; max-width: 400px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }}
+            /* GENERAL STYLES AND COLORS */
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                margin: 0; 
+                background-color: #f4f7f6;
+                color: #333;
+            }}
+            .container {{
+                /* Container width remains the same */
+                max-width: 1200px;
+                margin: 20px auto;
+                padding: 20px;
+                background: white;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                border-radius: 8px;
+            }}
+            h2 {{
+                color: #007bff;
+                border-bottom: 2px solid #e9ecef;
+                padding-bottom: 5px;
+                margin-top: 25px;
+            }}
+            h3 {{
+                margin-top: 15px;
+                color: #555;
+            }}
+            button {{
+                background-color: #28a745;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                cursor: pointer;
+                transition: background-color 0.3s;
+                margin-left: 10px;
+            }}
+            button:hover {{
+                background-color: #218838;
+            }}
+            #useSampleBtn {{
+                background-color: #ffc107;
+                color: #333;
+            }}
+            #useSampleBtn:hover {{
+                background-color: #e0a800;
+            }}
+            /* Disabled button style */
+            button[disabled] {{
+                background-color: #cccccc !important; 
+                cursor: not-allowed;
+            }}
+
+            /* UPDATED: CSS for the image header (60% height) */
+            #headerLogo {{
+                /* Stretch to full width of the container */
+                width: 100%;
+                /* Height/size reduction is typically done via max-height or max-width/width/height */
+                max-height: 200px; /* Using max-width to effectively reduce the size */
+                height: auto;
+                object-fit: fill;
+                display: block; 
+                margin: 0 auto 20px auto; 
+            }}
+
+
+            /* FRAME STYLES (3-COLUMN GRID) */
+            #framesContainer {{
+                display: grid; 
+                /* Explicitly setting three equal-width columns */
+                grid-template-columns: 1fr 1fr 1fr; 
+                gap: 20px; 
+                margin-bottom: 20px;
+            }}
+            .frame-box {{ 
+                display: flex;
+                flex-direction: column; 
+                justify-content: space-between; 
+                align-items: center;
+                border: 2px solid #cce5ff;
+                border-radius: 8px;
+                background-color: #eaf3ff;
+                padding: 10px;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }}
+            /* POP UP/DOWN EFFECT */
+            .frame-box.focused {{
+                border-color: #007bff;
+                box-shadow: 0 0 15px rgba(0, 123, 255, 0.5);
+                transform: scale(1.05); 
+                background-color: #ccddff;
+                z-index: 10; 
+            }}
+            img {{ 
+                width: 100%; 
+                height: auto; 
+                margin-bottom: 5px;
+                border: 1px solid #007bff;
+                border-radius: 4px;
+            }}
+            .frame-info {{
+                font-size: 0.8em; 
+                color: #666;
+                margin: 5px 0;
+            }}
+            .focus-btn {{
+                background-color: #007bff;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 4px;
+                cursor: pointer;
+                width: 100%;
+                text-align: center;
+                font-size: 0.9em;
+                margin-top: 5px;
+                transition: background-color 0.2s;
+            }}
+            .focus-btn.selected {{
+                background-color: #dc3545; 
+            }}
+            
+            /* VERTICAL COMPACTION */
+            .control-group {{
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 20px;
+            }}
+
+
+            /* AI JUDGEMENT RESPONSE STYLES */
+            #serverResponse {{
+                border: 2px solid #ffc107;
+                padding: 15px; 
+                background: #fffbe6;
+                border-radius: 6px;
+            }}
+            #serverResponse table {{ 
+                border-collapse: collapse; 
+                width: 100%; 
+                margin: 10px 0; 
+                font-size: 0.9em;
+            }}
+            #serverResponse th, #serverResponse td {{ 
+                border: 1px solid #ccc; 
+                padding: 8px; 
+                text-align: left; 
+            }}
+            #serverResponse th {{ 
+                background-color: #007bff;
+                color: white; 
+            }}
+            input[type="file"], textarea, select {{
+                padding: 10px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                margin-bottom: 10px;
+                width: 100%;
+                box-sizing: border-box;
+            }}
+            #figureSelect {{
+                width: 250px;
+            }}
+            #sampleVideoPlayer {{
+                width: 100%;
+                max-width: 400px;
+                margin-bottom: 15px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+            }}
         </style>
     </head>
     <body>
@@ -144,7 +287,7 @@ def index():
 
         <script>
         // *** FRAME DATA NOW STORES BASE64 STRING ***
-        let extractedFrames = []; // [{ base64_data: '...', timestamp_sec: '...' }, ...]
+        let extractedFrames = []; // [{{ base64_data: '...', timestamp_sec: '...' }}, ...]
         let videoFileToUpload = null;
         let selectedFrameIndices = new Set(); 
 
@@ -272,7 +415,7 @@ def index():
             try {{
                 // Note: The LLM output MUST use the HTML <table> format as instructed.
                 serverResponseDiv.innerHTML = marked.parse(data.llm_output || "");
-            } catch (e) {{
+            }} catch (e) {{
                 serverResponseDiv.textContent = JSON.stringify(data, null, 2);
                 console.error("Error parsing LLM output:", e);
             }}
@@ -286,7 +429,7 @@ def index():
     """
 
 # ------------------------
-# Extract frames Endpoint (MODIFIED for Base64 Output)
+# Extract frames Endpoint (Base64 Output)
 # ------------------------
 @app.post("/extract_frames")
 async def extract_frames(video: UploadFile = File(...)):
@@ -328,7 +471,6 @@ async def extract_frames(video: UploadFile = File(...)):
                         resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
                     # Encode resized frame to JPEG bytes with compression 75
-                    # This eliminates the need to save to disk in a shared frame directory
                     encode_param = [cv2.IMWRITE_JPEG_QUALITY, 75]
                     _, buffer = cv2.imencode('.jpg', resized_frame, encode_param)
                     
@@ -355,7 +497,7 @@ async def extract_frames(video: UploadFile = File(...)):
 
 
 # ------------------------
-# Judge frames with LLM Endpoint (MODIFIED for Base64 Input)
+# Judge frames with LLM Endpoint (Base64 Input)
 # ------------------------
 @app.post("/judge_base64_frames")
 async def judge_frames(
