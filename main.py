@@ -3,23 +3,25 @@ import cv2
 import tempfile
 import json
 import uuid
+import time # Added for the optional sleep/debug print
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
+from typing import List
 
 # ------------------------
 # Config
 # ------------------------
 client = OpenAI()
 # --- MODIFIED 1: Changed to a valid OpenAI Vision Model ---
-MODEL_NAME = "gpt-4o"  
+MODEL_NAME = "gpt-4o"
 # --------------------------------------------------------
 FRAME_DIR = "temp_frames"
 STATIC_ROOT_DIR = os.path.join(os.getcwd(), "static")
 VIDEO_DIR = os.path.join(STATIC_ROOT_DIR, "videos")
-SAMPLE_VIDEO_PATH = "/static/videos/sample_video.mp4" 
+SAMPLE_VIDEO_PATH = "/static/videos/sample_video.mp4"
 
 os.makedirs(FRAME_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
@@ -43,7 +45,7 @@ app.mount("/static", StaticFiles(directory=STATIC_ROOT_DIR), name="static")
 
 
 # ------------------------
-# Frontend HTML 🎨 
+# Frontend HTML 🎨
 # (No changes to the HTML/JavaScript logic were needed here)
 # ------------------------
 @app.get("/", response_class=HTMLResponse)
@@ -437,31 +439,63 @@ async def extract_frames(video: UploadFile = File(...)):
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # UPDATED: Changed from 5 to 6 target frames
+    # Define max width for resizing
+    MAX_WIDTH = 1024 
+    
+    # Target number of frames to keep
     target_frames = 6
-    step = max(1, total_frames // (target_frames*2)) 
+    # Calculate step size to cover the entire video, adjusted for the sliding window
+    step = max(1, total_frames // 10) 
 
     frames = []
     count = 0
-    while len(frames) < target_frames:
+    while True: # Changed to 'while True' to process the entire video
         ret, frame = cap.read()
-        if not ret: break
+        if not ret: break # Exit loop when video ends
 
         if count % step == 0:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # Only save frame if there is sufficient motion/detail
             if gray.std() >= 10:
+                
+                # --- NEW LOGIC: Resize the frame for smaller file size ---
+                height, width = frame.shape[:2]
+                resized_frame = frame
+                if width > MAX_WIDTH:
+                    # Calculate new dimensions while maintaining aspect ratio
+                    ratio = MAX_WIDTH / width
+                    new_width = MAX_WIDTH
+                    new_height = int(height * ratio)
+                    
+                    # Resize the frame using interpolation
+                    resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                # --- END RESIZE LOGIC ---
+                
                 filename = f"{uuid.uuid4().hex}.jpg"
                 filepath = os.path.join(FRAME_DIR, filename)
-                cv2.imwrite(filepath, frame)
+                
+                # Save the frame using JPEG compression quality 85
+                cv2.imwrite(filepath, resized_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
-                frames.append({
+                new_frame_data = {
                     "url": f"/frames/{filename}",
                     "timestamp_sec": round(count/fps,2)
-                })
+                }
+                
+                # --- NEW LOGIC: Fixed-Size Sliding Window (Keeps the latest frames) ---
+                if len(frames) >= target_frames:
+                    # Remove the OLDEST frame (index 0)
+                    frames.pop(0) 
+                
+                # Add the NEW frame to the end
+                frames.append(new_frame_data)
+                # --- END SLIDING WINDOW LOGIC ---
+                
         count += 1
 
     cap.release()
     os.remove(path)
+    # The returned 'frames' list contains the last 'target_frames' extracted.
     return {"frames": frames}
 
 
@@ -474,7 +508,7 @@ async def judge_frames(
     observations: str = Form(""),
     frame_urls_json: str = Form(...)
 ):
-    frame_urls = json.loads(frame_urls_json)
+    frame_urls: List[str] = json.loads(frame_urls_json)
 
     try:
         with open("as_judging.json") as f:
@@ -483,10 +517,6 @@ async def judge_frames(
         return JSONResponse(status_code=500, content={"llm_output": "Error: as_judging.json not found."})
     except json.JSONDecodeError as e:
         return JSONResponse(status_code=500, content={"llm_output": f"Error: Invalid JSON in as_judging.json: {e}"})
-
-    # ----------------------------------------------------
-    # --- MODIFIED 2 & 3: Updated to standard Vision API call structure ---
-    # ----------------------------------------------------
 
     # 1. Construct the message content list (Text + Images)
     messages_content = []
@@ -506,8 +536,19 @@ async def judge_frames(
         messages_content.append({
             "type": "image_url",
             # CRITICAL: Using your actual Render domain for the Vision API to access the images
+            # NOTE: This line MUST match your Render URL exactly.
             "image_url": {"url": f"https://synchro-judging-bot.onrender.com{url}"} 
         })
+    
+    # --- OPTIONAL: Debug Print and Delay ---
+    # This helps confirm the exact URLs being sent and may slightly alleviate race conditions
+    print("--- DEBUG: URLs sent to OpenAI ---")
+    for item in messages_content:
+        if item.get('type') == 'image_url':
+            print(item['image_url']['url'])
+    print("-----------------------------------")
+    time.sleep(1) 
+    # --- END OPTIONAL ---
     
     try:
         completion = client.chat.completions.create(
@@ -517,14 +558,13 @@ async def judge_frames(
                     "role": "user",
                     "content": messages_content
                 }
-            ]
+            ],
+            max_tokens=2000,
         )
         # Access the response content correctly
         output_text = completion.choices[0].message.content
     except Exception as e:
         output_text = f"LLM call failed: {type(e).__name__}: {e}"
-
-    # ----------------------------------------------------
 
     return {
         "llm_output": output_text,
