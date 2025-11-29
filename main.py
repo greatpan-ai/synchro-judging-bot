@@ -3,20 +3,30 @@ import cv2
 import tempfile
 import json
 import uuid
-import time 
-import base64 
+import time
+import base64 # Retaining base64 import but not used for Gemini Part objects
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from openai import OpenAI
+# --- GEMINI IMPORTS ---
+from google import genai
+from google.genai.errors import APIError
 from typing import List
 
 # ------------------------
 # Config
 # ------------------------
-client = OpenAI()
-MODEL_NAME = "gpt-4o"
+# --- GEMINI CLIENT SETUP ---
+# Client will automatically look for the GEMINI_API_KEY environment variable.
+try:
+    client = genai.Client()
+except Exception as e:
+    # This will be caught if the key is missing during local dev
+    print(f"Warning: Gemini client initialization failed. Is GEMINI_API_KEY set? Error: {e}")
+    client = None # Set to None for error handling later
+
+MODEL_NAME = "gemini-2.5-pro" # Recommended for high-quality, complex multimodal reasoning
 FRAME_DIR = "temp_frames"
 STATIC_ROOT_DIR = os.path.join(os.getcwd(), "static")
 VIDEO_DIR = os.path.join(STATIC_ROOT_DIR, "videos")
@@ -44,7 +54,7 @@ app.mount("/static", StaticFiles(directory=STATIC_ROOT_DIR), name="static")
 
 
 # ------------------------
-# Frontend HTML 🎨 
+# Frontend HTML 🎨
 # ------------------------
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -238,7 +248,7 @@ def index():
             Your browser does not support the video tag.
         </video>
 
-                <div class="control-group">
+            <div class="control-group">
             <input type="file" id="videoInput" accept="video/*" style="margin-bottom: 0; width: auto;">
                         <button id="uploadBtn" disabled>Upload Video and Extract Frames</button>
             <button id="useSampleBtn">Use Sample Video</button>
@@ -495,7 +505,7 @@ async def extract_frames(video: UploadFile = File(...)):
 
 
 # ------------------------
-# Judge frames with LLM Endpoint (FINAL - USING BASE64 ENCODING + PROMPT FIX)
+# Judge frames with LLM Endpoint (REWRITTEN FOR GEMINI API)
 # ------------------------
 @app.post("/judge_frames")
 async def judge_frames(
@@ -503,6 +513,11 @@ async def judge_frames(
     observations: str = Form(""),
     frame_urls_json: str = Form(...)
 ):
+    # Check if the Gemini client initialized successfully
+    global client
+    if not client:
+        return JSONResponse(status_code=500, content={"llm_output": "Error: Gemini client not initialized. Check GEMINI_API_KEY."})
+    
     frame_urls: List[str] = json.loads(frame_urls_json)
 
     try:
@@ -513,65 +528,53 @@ async def judge_frames(
     except json.JSONDecodeError as e:
         return JSONResponse(status_code=500, content={"llm_output": f"Error: Invalid JSON in as_judging.json: {e}"})
 
-    # 1. Initialize message content list
-    base64_content = []
+    # 1. Initialize message content list (will contain strings and genai.types.Part objects)
+    gemini_content = []
 
     # Add the text prompt first
     prompt_text = (
         f"Analyze the sequence of images for the Artistic Swimming Figure: '{figure_name}'. "
         f"Observations provided by the user: '{observations}'. "
-        # >>> CRITICAL PROMPT FIX <<<
         f"If the observations field is blank, base your assessment strictly on the visual evidence from the images. " 
-        # >>> END CRITICAL PROMPT FIX <<<
         f"Reference the following judging guidelines: {prompt_template.get('content', 'No guidelines provided')}. "
         "Provide a technical assessment and a score out of 10. "
         "Format the response strictly using Markdown."
     )
-    base64_content.append({"type": "text", "text": prompt_text})
+    gemini_content.append(prompt_text)
 
-    # 2. Iterate through URLs, read file locally, and encode to Base64
+    # 2. Iterate through URLs, read file locally, and create genai.types.Part objects
     for url in frame_urls:
         # Convert the public URL path back to the local file path (e.g., /frames/xyz.jpg -> temp_frames/xyz.jpg)
         path = url.replace("/frames/", f"{FRAME_DIR}/")
 
         try:
             with open(path, "rb") as image_file:
-                # Read file, encode to Base64, and decode to UTF-8 string
-                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+                image_bytes = image_file.read()
+                
+                # Create the Gemini Part object directly from file bytes
+                image_part = genai.types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type='image/jpeg' # Mime type must match the file type
+                )
+                gemini_content.append(image_part)
         except FileNotFoundError:
-            print(f"File not found for Base64 encoding: {path}")
+            print(f"File not found for Gemini encoding: {path}")
             continue 
 
-        # 3. Add the Base64 data to the content list
-        base64_content.append({
-            "type": "image_url",
-            "image_url": {
-                # Format required by OpenAI: data:image/jpeg;base64,<data>
-                "url": f"data:image/jpeg;base64,{encoded_image}" 
-            }
-        })
-    
-    # --- OPTIONAL: Debug Print and Delay ---
-    print("--- DEBUG: First few characters of Base64 content sent to OpenAI ---")
-    for item in base64_content:
-        if item.get('type') == 'image_url':
-            print(item['image_url']['url'][:50] + "...") 
-    print("-------------------------------------------------------------------")
-    time.sleep(1) 
-    # --- END OPTIONAL ---
-
+    # --- GEMINI API Call ---
+    print(f"Sending {len(frame_urls)} images and prompt to Gemini...")
     try:
-        completion = client.chat.completions.create(
+        completion = client.models.generate_content(
             model=MODEL_NAME, 
-            messages=[
-                {
-                    "role": "user",
-                    "content": base64_content # Use the new base64 list here
-                }
-            ],
-            max_tokens=2000,
+            contents=gemini_content, # Pass the list of strings and Part objects
+            config=genai.types.GenerateContentConfig(
+                max_output_tokens=2000 
+            )
         )
-        output_text = completion.choices[0].message.content
+        output_text = completion.text # Gemini response has a .text attribute
+    except APIError as e:
+        output_text = f"Gemini API call failed: {type(e).__name__}: {e}"
+        print(f"FATAL LLM ERROR: {e}")
     except Exception as e:
         output_text = f"LLM call failed: {type(e).__name__}: {e}"
         print(f"FATAL LLM ERROR: {e}")
