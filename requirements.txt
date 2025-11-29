@@ -4,3 +4,4 @@ opencv-python
 python-multipart
 openai
 pydantic
+google-genai
