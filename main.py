@@ -56,7 +56,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=STATIC_ROOT_DIR), name="static")
 
 # ------------------------
-# Frontend HTML (SYNTAX FIXED: All literal {} changed to {{}})
+# Frontend HTML (Incorporating updates 2 through 11)
 # ------------------------
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -93,8 +93,9 @@ def index():
                 margin-top: 15px;
                 color: #555;
             }}
+            /* UPDATE 3: Change all primary buttons to blue (#007bff) */
             button {{
-                background-color: #28a745;
+                background-color: #007bff; /* Primary Blue */
                 color: white;
                 border: none;
                 padding: 10px 20px;
@@ -104,14 +105,15 @@ def index():
                 margin-left: 10px;
             }}
             button:hover {{
-                background-color: #218838;
+                background-color: #0056b3; /* Darker Blue */
             }}
+            /* Remove specific color override for Use Sample, it now uses the primary blue */
             #useSampleBtn {{
-                background-color: #ffc107;
-                color: #333;
+                background-color: #007bff;
+                color: white;
             }}
             #useSampleBtn:hover {{
-                background-color: #e0a800;
+                background-color: #0056b3;
             }}
             /* Disabled button style */
             button[disabled] {{
@@ -119,12 +121,10 @@ def index():
                 cursor: not-allowed;
             }}
 
-            /* UPDATED: CSS for the image header (60% height) */
+            /* CSS for the image header */
             #headerLogo {{
-                /* Stretch to full width of the container */
                 width: 100%;
-                /* Height/size reduction is typically done via max-height or max-width/width/height */
-                max-height: 200px; /* Using max-width to effectively reduce the size */
+                max-height: 200px;
                 height: auto;
                 object-fit: fill;
                 display: block; 
@@ -135,7 +135,6 @@ def index():
             /* FRAME STYLES (3-COLUMN GRID) */
             #framesContainer {{
                 display: grid; 
-                /* Explicitly setting three equal-width columns */
                 grid-template-columns: 1fr 1fr 1fr; 
                 gap: 20px; 
                 margin-bottom: 20px;
@@ -172,7 +171,7 @@ def index():
                 margin: 5px 0;
             }}
             .focus-btn {{
-                background-color: #007bff;
+                background-color: #007bff; 
                 color: white;
                 border: none;
                 padding: 5px 10px;
@@ -185,7 +184,7 @@ def index():
                 transition: background-color 0.2s;
             }}
             .focus-btn.selected {{
-                background-color: #dc3545; 
+                background-color: #dc3545; /* Red for selected state */
             }}
             
             /* VERTICAL COMPACTION */
@@ -203,6 +202,7 @@ def index():
                 padding: 15px; 
                 background: #fffbe6;
                 border-radius: 6px;
+                font-size: 0.95em;
             }}
             #serverResponse table {{ 
                 border-collapse: collapse; 
@@ -237,6 +237,14 @@ def index():
                 border: 1px solid #ccc;
                 border-radius: 4px;
             }}
+            #attribution {{ /* Style for the new attribution text (Update 4) */
+                font-size: 0.75em;
+                color: #6c757d;
+                text-align: center;
+                margin-top: 20px;
+                padding-top: 10px;
+                border-top: 1px solid #e9ecef;
+            }}
         </style>
     </head>
     <body>
@@ -252,38 +260,126 @@ def index():
 
         <div class="control-group">
             <input type="file" id="videoInput" accept="video/*" style="margin-bottom: 0; width: auto;">
-            <button id="uploadBtn" disabled>Upload Video and Extract Frames</button>
+            <button id="uploadBtn" disabled>Upload Video</button>
             <button id="useSampleBtn">Use Sample Video</button>
         </div>
 
         <hr/>
-        <h2>Extracted Key Frames 📸</h2>
+        <h2>Select Key Frames 📸</h2>
         <div id="framesContainer"></div>
 
         <hr/>
-        <h2>Figure Details 📝</h2>
-        <h3>Observations (optional)</h3>
-        <textarea id="obsBox" rows="4" placeholder="Add specific notes about the athlete or attempt..."></textarea>
-
+        <h2>Select Figure 📝</h2>
+        
         <h3>Select Figure & Judge</h3>
         <div class="control-group">
             <select id="figureSelect">
-                <option>301 Barracuda</option>
-                <option>309 Reverse Barracuda</option>
-                <option>360 Catalina</option>
-                <option>402 Ballet Leg</option>
-                <option>420 Dolphin</option>
-                <option>440 Somersault Back</option>
-                <option>502 Crane</option>
-                <option>Other</option>
+                <optgroup label="100 Series – Novice / Basic Figures">
+                    <option value="101 Front Layout">101 Front Layout</option>
+                    <option value="102 Back Layout">102 Back Layout</option>
+                    <option value="103 Front Pike">103 Front Pike</option>
+                    <option value="104 Back Pike">104 Back Pike</option>
+                    <option value="105 Front Layout to Ballet Leg">105 Front Layout to Ballet Leg</option>
+                    <option value="106 Back Layout to Ballet Leg">106 Back Layout to Ballet Leg</option>
+                    <option value="107 Front Layout to Split">107 Front Layout to Split</option>
+                    <option value="108 Back Layout to Split">108 Back Layout to Split</option>
+                    <option value="109 Front Layout to Vertical">109 Front Layout to Vertical</option>
+                </optgroup>
+                <optgroup label="200 Series – Intermediate Figures">
+                    <option value="201 Front Pike to Vertical">201 Front Pike to Vertical</option>
+                    <option value="202 Back Pike to Vertical">202 Back Pike to Vertical</option>
+                    <option value="203 Front Layout to Flamingo">203 Front Layout to Flamingo</option>
+                    <option value="204 Back Layout to Flamingo">204 Back Layout to Flamingo</option>
+                    <option value="205 Front Layout to Tower">205 Front Layout to Tower</option>
+                    <option value="206 Back Layout to Tower">206 Back Layout to Tower</option>
+                    <option value="207 Front Layout to Catalina">207 Front Layout to Catalina</option>
+                    <option value="208 Back Layout to Catalina">208 Back Layout to Catalina</option>
+                    <option value="209 Front Layout to Kip">209 Front Layout to Kip</option>
+                </optgroup>
+                <optgroup label="300 Series – Advanced / Youth & Junior Figures">
+                    <option value="301 Barracuda">301 Barracuda</option>
+                    <option value="302 Barracuda Airborne Split">302 Barracuda Airborne Split</option>
+                    <option value="303 Barracuda Twist">303 Barracuda Twist</option>
+                    <option value="304 Barracuda Vertical Descent">304 Barracuda Vertical Descent</option>
+                    <option value="305 Kip">305 Kip</option>
+                    <option value="306 Kip Twist">306 Kip Twist</option>
+                    <option value="307 Kip Vertical Descent">307 Kip Vertical Descent</option>
+                    <option value="308 Flamingo">308 Flamingo</option>
+                    <option value="309 Flamingo Bent Knee">309 Flamingo Bent Knee</option>
+                    <option value="310 Flamingo Bent Knee to Vertical">310 Flamingo Bent Knee to Vertical</option>
+                    <option value="311 Flamingo Vertical Descent">311 Flamingo Vertical Descent</option>
+                    <option value="312 Tower">312 Tower</option>
+                    <option value="313 Tower Split">313 Tower Split</option>
+                    <option value="314 Tower Split to Vertical">314 Tower Split to Vertical</option>
+                    <option value="315 Tower Vertical Descent">315 Tower Vertical Descent</option>
+                    <option value="316 Catalina">316 Catalina</option>
+                    <option value="317 Walkover Front">317 Walkover Front</option>
+                    <option value="318 Walkover Back">318 Walkover Back</option>
+                    <option value="319 Walkover Front to Split">319 Walkover Front to Split</option>
+                    <option value="320 Walkover Back to Split">320 Walkover Back to Split</option>
+                    <option value="321 Walkover Front to Vertical Split">321 Walkover Front to Vertical Split</option>
+                    <option value="322 Walkover Back to Vertical Split">322 Walkover Back to Vertical Split</option>
+                    <option value="323 Walkover Front to Vertical Descent">323 Walkover Front to Vertical Descent</option>
+                    <option value="324 Walkover Back to Vertical Descent">324 Walkover Back to Vertical Descent</option>
+                    <option value="325 Airborne Split">325 Airborne Split</option>
+                    <option value="326 Airborne Split to Vertical">326 Airborne Split to Vertical</option>
+                    <option value="327 Airborne Split to Vertical Descent">327 Airborne Split to Vertical Descent</option>
+                    <option value="328 Kip Twist to Vertical">328 Kip Twist to Vertical</option>
+                    <option value="329 Kip Twist to Vertical Descent">329 Kip Twist to Vertical Descent</option>
+                    <option value="330 Flamingo Bent Knee to Vertical Descent">330 Flamingo Bent Knee to Vertical Descent</option>
+                    <option value="331 Tower Split to Vertical Descent">331 Tower Split to Vertical Descent</option>
+                    <option value="332 Barracuda Airborne Split to Vertical">332 Barracuda Airborne Split to Vertical</option>
+                    <option value="333 Barracuda Airborne Split to Vertical Descent">333 Barracuda Airborne Split to Vertical Descent</option>
+                    <option value="334 Barracuda Twist to Vertical">334 Barracuda Twist to Vertical</option>
+                    <option value="335 Barracuda Twist to Vertical Descent">335 Barracuda Twist to Vertical Descent</option>
+                    <option value="336 Kip Twist to Vertical Split">336 Kip Twist to Vertical Split</option>
+                    <option value="337 Kip Twist to Vertical Split Descent">337 Kip Twist to Vertical Split Descent</option>
+                    <option value="338 Flamingo Bent Knee to Vertical Split">338 Flamingo Bent Knee to Vertical Split</option>
+                    <option value="339 Flamingo Bent Knee to Vertical Split Descent">339 Flamingo Bent Knee to Vertical Split Descent</option>
+                    <option value="340 Catalina Walkover">340 Catalina Walkover</option>
+                    <option value="341 Catalina Walkover to Split">341 Catalina Walkover to Split</option>
+                    <option value="342 Catalina Walkover to Vertical Split">342 Catalina Walkover to Vertical Split</option>
+                    <option value="343 Catalina Walkover to Vertical Descent">343 Catalina Walkover to Vertical Descent</option>
+                    <option value="344 Tower Walkover">344 Tower Walkover</option>
+                    <option value="345 Tower Walkover to Split">345 Tower Walkover to Split</option>
+                    <option value="346 Tower Walkover to Vertical Split">346 Tower Walkover to Vertical Split</option>
+                    <option value="347 Tower Walkover to Vertical Descent">347 Tower Walkover to Vertical Descent</option>
+                    <option value="348 Flamingo Walkover">348 Flamingo Walkover</option>
+                    <option value="349 Flamingo Walkover to Vertical">349 Flamingo Walkover to Vertical</option>
+                </optgroup>
+                <optgroup label="400 Series – Senior / High Difficulty Figures">
+                    <option value="401 Flamingo Bent Knee to Vertical Descent">401 Flamingo Bent Knee to Vertical Descent</option>
+                    <option value="402 Flamingo Bent Knee to Vertical Split Descent">402 Flamingo Bent Knee to Vertical Split Descent</option>
+                    <option value="403 Tower Split to Vertical Descent">403 Tower Split to Vertical Descent</option>
+                    <option value="404 Tower Walkover to Vertical Split Descent">404 Tower Walkover to Vertical Split Descent</option>
+                    <option value="405 Barracuda Airborne Split to Vertical">405 Barracuda Airborne Split to Vertical</option>
+                    <option value="406 Barracuda Airborne Split to Vertical Descent">406 Barracuda Airborne Split to Vertical Descent</option>
+                    <option value="407 Barracuda Twist to Vertical">407 Barracuda Twist to Vertical</option>
+                    <option value="408 Barracuda Twist to Vertical Descent">408 Barracuda Twist to Vertical Descent</option>
+                    <option value="409 Kip Twist to Vertical">409 Kip Twist to Vertical</option>
+                    <option value="410 Kip Twist to Vertical Descent">410 Kip Twist to Vertical Descent</option>
+                    <option value="411 Kip Twist to Vertical Split">411 Kip Twist to Vertical Split</option>
+                    <option value="412 Kip Twist to Vertical Split Descent">412 Kip Twist to Vertical Split Descent</option>
+                    <option value="413 Flamingo Walkover to Vertical Split">413 Flamingo Walkover to Vertical Split</option>
+                    <option value="414 Flamingo Walkover to Vertical Split Descent">414 Flamingo Walkover to Vertical Split Descent</option>
+                    <option value="415 Tower Walkover to Vertical Split">415 Tower Walkover to Vertical Split</option>
+                    <option value="416 Tower Walkover to Vertical Split Descent">416 Tower Walkover to Vertical Split Descent</option>
+                    <option value="417 Catalina Walkover to Vertical Split">417 Catalina Walkover to Vertical Split</option>
+                    <option value="418 Catalina Walkover to Vertical Split Descent">418 Catalina Walkover to Vertical Split Descent</option>
+                    <option value="419 Airborne Split to Vertical Split">419 Airborne Split to Vertical Split</option>
+                    <option value="420 Airborne Split to Vertical Split Descent">420 Airborne Split to Vertical Split Descent</option>
+                </optgroup>
+                <option value="Other">Other</option>
             </select>
-
-            <button id="submitSelected" style="margin-top:0;">Send Selected Frames for Judgement</button>
+            
+            <button id="submitSelected" style="margin-top:0;">Send to Judging Bot</button>
         </div>
 
         <hr/>
-        <h2>Artistic Swimming Figure Judging Bot 🤖</h2>
+        <h2>Judge 🤖</h2>
         <div id="serverResponse" style="min-height: 100px;">Awaiting Judgement...</div>
+
+        <div id="attribution">Figure Judging Bot V1.0 was developed using ChatGPT 5.1 and trained on the Artistic Swimming Manual for Judges, Technical Controllers, Referees, and Coaches (2022–2025).</div>
 
         <script>
         // *** FRAME DATA NOW STORES BASE64 STRING ***
@@ -296,7 +392,8 @@ def index():
             const fileSelected = document.getElementById("videoInput").files.length > 0;
             const sampleReady = videoFileToUpload !== null;
 
-            uploadBtn.disabled = !(fileSelected || sampleReady);
+            // Only enable Upload button if a file is selected 
+            uploadBtn.disabled = !fileSelected;
         }}
 
         function toggleFrameFocus(frameIndex) {{
@@ -307,7 +404,8 @@ def index():
                 selectedFrameIndices.delete(frameIndex);
                 frameBox.classList.remove('focused');
                 focusBtn.classList.remove('selected');
-                focusBtn.textContent = 'Focus / Select';
+                // UPDATE 2: Text changed from "Focus / Select" to "Select"
+                focusBtn.textContent = 'Select'; 
             }} else {{
                 selectedFrameIndices.add(frameIndex);
                 frameBox.classList.add('focused');
@@ -316,33 +414,10 @@ def index():
             }}
         }}
 
-        // --- Event Listener for Sample Button ---
-        document.getElementById("useSampleBtn").onclick = async () => {{
-            document.getElementById("serverResponse").innerHTML = "Loading sample video file...";
-            
-            try {{
-                const response = await fetch('{SAMPLE_VIDEO_PATH}');
-                const blob = await response.blob();
-                
-                videoFileToUpload = new File([blob], "sample_video.mp4", {{type: "video/mp4"}});
-                
-                document.getElementById("videoInput").value = null;
-                document.getElementById("serverResponse").innerHTML = "Sample video ready. Click 'Upload Video and Extract Frames'.";
-                
-                checkReadyState();
-
-            }} catch (e) {{
-                document.getElementById("serverResponse").innerHTML = `Error loading sample video. Ensure the file exists.`;
-                videoFileToUpload = null;
-                console.error("Error fetching sample video:", e);
-                checkReadyState();
-            }}
-        }};
-
-        // --- Event Listener for Upload Button (UPDATED for Loading State) ---
-        document.getElementById("uploadBtn").onclick = async () => {{
-            let fileToProcess = videoFileToUpload || document.getElementById("videoInput").files[0];
+        // --- CORE FUNCTION: Extracts frames and renders them ---
+        async function runFrameExtraction(fileToProcess) {{
             const uploadBtn = document.getElementById("uploadBtn");
+            const useSampleBtn = document.getElementById("useSampleBtn");
             const serverResponse = document.getElementById("serverResponse");
 
             if (!fileToProcess) {{ 
@@ -350,9 +425,11 @@ def index():
                 return; 
             }}
             
-            // ** START LOADING STATE **
+            // ** START LOADING STATE ** (Handles both Upload and Sample Button text)
             uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Processing Frames...';
+            useSampleBtn.disabled = true;
+            uploadBtn.textContent = 'Extracting key frames...'; // UPDATE 11: Changed text
+            useSampleBtn.textContent = 'Extracting key frames...'; // UPDATE 10: Changed text
             serverResponse.innerHTML = "<h3>⏳ Extracting key frames from video... please wait.</h3>";
 
             const formData = new FormData();
@@ -364,18 +441,50 @@ def index():
 
                 // ** END LOADING STATE **
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = 'Upload Video and Extract Frames';
+                useSampleBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Video'; // UPDATE 11: Restore text
+                useSampleBtn.textContent = 'Use Sample Video'; // UPDATE 10: Restore text
 
                 extractedFrames = data.frames || [];
                 selectedFrameIndices.clear(); 
                 renderFrames();
-                serverResponse.innerHTML = "Frames extracted. Select key frames using the 'Focus' button and press 'Send' to continue.";
+                serverResponse.innerHTML = "Frames extracted. Select key frames using the 'Select' button and press 'Send to Judging Bot' to continue.";
             }} catch (error) {{
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = 'Upload Video and Extract Frames';
+                useSampleBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Video'; 
+                useSampleBtn.textContent = 'Use Sample Video';
                 serverResponse.innerHTML = `<h3>❌ Error during frame extraction: ${{error.message}}</h3>`;
                 console.error(error);
             }}
+        }}
+
+
+        // --- Event Listener for Sample Button (UPDATE 10: Now runs extraction immediately) ---
+        document.getElementById("useSampleBtn").onclick = async () => {{
+            const serverResponse = document.getElementById("serverResponse");
+            serverResponse.innerHTML = "Loading sample video file...";
+            
+            try {{
+                const response = await fetch('{SAMPLE_VIDEO_PATH}');
+                const blob = await response.blob();
+                
+                // Set the file object directly for processing
+                const sampleFile = new File([blob], "sample_video.mp4", {{type: "video/mp4"}});
+                document.getElementById("videoInput").value = null; // Clear manual input
+                
+                await runFrameExtraction(sampleFile); // Run extraction immediately
+            }} catch (e) {{
+                serverResponse.innerHTML = `Error loading sample video. Ensure the file exists.`;
+                console.error("Error fetching sample video:", e);
+                checkReadyState();
+            }}
+        }};
+
+        // --- Event Listener for Upload Button (UPDATE 11: Text updated, calls core function) ---
+        document.getElementById("uploadBtn").onclick = async () => {{
+            let fileToProcess = document.getElementById("videoInput").files[0];
+            await runFrameExtraction(fileToProcess);
         }};
 
         // --- Handle file input change ---
@@ -384,7 +493,7 @@ def index():
             checkReadyState();
         }};
 
-        // --- Render Frames Function (MODIFIED to use Base64 as Image Source) ---
+        // --- Render Frames Function ---
         function renderFrames() {{
             const container = document.getElementById("framesContainer");
             container.innerHTML = "";
@@ -398,24 +507,23 @@ def index():
                 div.innerHTML = `
                     <img src="data:image/jpeg;base64,${{f.base64_data}}" /> 
                     <div class="frame-info">Time: ${{f.timestamp_sec}}s</div> 
-                    <button id="focus-btn-${{idx}}" class="focus-btn" onclick="toggleFrameFocus(${{idx}})">Focus / Select</button>
-                `;
+                    <button id="focus-btn-${{idx}}" class="focus-btn" onclick="toggleFrameFocus(${{idx}})">Select</button> `;
                 container.appendChild(div);
             }});
         }}
 
-        // --- Submit Judgement Function (UPDATED for Loading State) ---
+        // --- Submit Judgement Function (Text Updated) ---
         document.getElementById("submitSelected").onclick = async () => {{
             const selectedIndices = Array.from(selectedFrameIndices).sort((a, b) => a - b);
             const submitBtn = document.getElementById("submitSelected");
             const serverResponseDiv = document.getElementById("serverResponse");
 
-            if (selectedIndices.length === 0) {{ alert("Select at least one frame using the Focus button."); return; }}
+            if (selectedIndices.length === 0) {{ alert("Select at least one frame using the Select button."); return; }}
             
             // ** START LOADING STATE **
             submitBtn.disabled = true;
             submitBtn.textContent = 'AI Judging in Progress...';
-            serverResponseDiv.innerHTML = "<h3>🤖 Sending frames to Gemini for Judgement... Please wait.</h3>";
+            serverResponseDiv.innerHTML = "<h3>🤖 Sending frames for Judgement... Please wait.</h3>";
 
 
             const selectedBase64Data = selectedIndices.map(idx => {{
@@ -424,8 +532,7 @@ def index():
 
             const formData = new FormData();
             formData.append("figure_name", document.getElementById("figureSelect").value);
-            formData.append("observations", document.getElementById("obsBox").value);
-            // Send the Base64 array as a JSON string
+            // UPDATE 8: Removed formData.append("observations", ...)
             formData.append("frame_base64_json", JSON.stringify(selectedBase64Data));
 
             try {{
@@ -434,7 +541,7 @@ def index():
                 
                 // ** END LOADING STATE **
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Send Selected Frames for Judgement';
+                submitBtn.textContent = 'Send to Judging Bot'; // UPDATE 6: Restore text
 
                 try {{
                     // Note: The LLM output MUST use the HTML <table> format as instructed.
@@ -447,7 +554,7 @@ def index():
             }} catch (error) {{
                 // ** HANDLE ERROR **
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Send Selected Frames for Judgement';
+                submitBtn.textContent = 'Send to Judging Bot'; // UPDATE 6: Restore text
                 serverResponseDiv.innerHTML = `<h3>❌ Network Error: Could not reach the server.</h3>`;
                 console.error("Fetch error during judgement submission:", error);
             }}
@@ -459,7 +566,6 @@ def index():
     </body>
     </html>
     """
-
 # ------------------------
 # Extract frames Endpoint (Base64 Output)
 # ------------------------
