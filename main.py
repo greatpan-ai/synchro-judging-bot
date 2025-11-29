@@ -524,7 +524,7 @@ async def judge_frames(
         with open("as_judging.json") as f:
             prompt_template = json.load(f)
     except FileNotFoundError:
-        return JSONResponse(status_code=500, content={"llm_output": "Error: as_judging.json not found."})
+        return JSONResponse(status_code=500, content={"llm_output": "Error: as_judging.json not found. Check if the file exists."})
     except json.JSONDecodeError as e:
         return JSONResponse(status_code=500, content={"llm_output": f"Error: Invalid JSON in as_judging.json: {e}"})
 
@@ -543,6 +543,7 @@ async def judge_frames(
     gemini_content.append(prompt_text)
 
     # 2. Iterate through URLs, read file locally, and create genai.types.Part objects
+    files_processed = 0
     for url in frame_urls:
         # Convert the public URL path back to the local file path (e.g., /frames/xyz.jpg -> temp_frames/xyz.jpg)
         path = url.replace("/frames/", f"{FRAME_DIR}/")
@@ -557,12 +558,19 @@ async def judge_frames(
                     mime_type='image/jpeg' # Mime type must match the file type
                 )
                 gemini_content.append(image_part)
+                files_processed += 1
         except FileNotFoundError:
             print(f"File not found for Gemini encoding: {path}")
+            # Do not return yet, just skip this missing image
             continue 
 
     # --- GEMINI API Call ---
-    print(f"Sending {len(frame_urls)} images and prompt to Gemini...")
+    print(f"Sending {files_processed} images and prompt to Gemini...")
+    
+    # Check if any images were successfully loaded before calling the API
+    if files_processed == 0 and len(frame_urls) > 0:
+        return JSONResponse(status_code=400, content={"llm_output": "Error: Selected frames were not found on the server disk. Try re-extracting frames."})
+
     try:
         completion = client.models.generate_content(
             model=MODEL_NAME, 
@@ -571,12 +579,22 @@ async def judge_frames(
                 max_output_tokens=2000 
             )
         )
-        output_text = completion.text # Gemini response has a .text attribute
+        
+        output_text = completion.text
+        
+        # --- NEW DEBUG PRINT TO CONFIRM RESPONSE RECEIVED ---
+        if not output_text:
+            print("WARNING: Gemini returned an empty response string. Check safety settings or prompt.")
+            output_text = "The AI returned a blank response. Try running the process again."
+        else:
+            print(f"Gemini API call successful. First 100 chars: {output_text[:100]}...") 
+        # --- END NEW DEBUG PRINT ---
+
     except APIError as e:
-        output_text = f"Gemini API call failed: {type(e).__name__}: {e}"
-        print(f"FATAL LLM ERROR: {e}")
+        output_text = f"Gemini API call failed (APIError). Status: {e.status_code}. Details: {e.message}"
+        print(f"FATAL LLM API ERROR: {e}")
     except Exception as e:
-        output_text = f"LLM call failed: {type(e).__name__}: {e}"
+        output_text = f"LLM call failed (General Exception): {type(e).__name__}: {e}"
         print(f"FATAL LLM ERROR: {e}")
 
     return {
