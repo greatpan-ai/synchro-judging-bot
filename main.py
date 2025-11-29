@@ -4,35 +4,38 @@ import tempfile
 import json
 import uuid
 import time
-import base64 # Retaining base64 import but not used for Gemini Part objects
+import base64
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from typing import List, Dict, Any
+
 # --- GEMINI IMPORTS ---
 from google import genai
 from google.genai.errors import APIError
-from typing import List
+from google.genai.types import Part
 
 # ------------------------
 # Config
 # ------------------------
 # --- GEMINI CLIENT SETUP ---
-# Client will automatically look for the GEMINI_API_KEY environment variable.
 try:
-    client = genai.Client()
+    # Use api_key from environment, or let it fail cleanly
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
 except Exception as e:
-    # This will be caught if the key is missing during local dev
     print(f"Warning: Gemini client initialization failed. Is GEMINI_API_KEY set? Error: {e}")
-    client = None # Set to None for error handling later
+    client = None
 
-MODEL_NAME = "gemini-2.5-flash" # Recommended for high-quality, complex multimodal reasoning
-FRAME_DIR = "temp_frames"
+MODEL_NAME = "gemini-2.5-flash"
+# Increased for complex HTML output and multiple image inputs
+MAX_OUTPUT_TOKENS = 8000 
 STATIC_ROOT_DIR = os.path.join(os.getcwd(), "static")
 VIDEO_DIR = os.path.join(STATIC_ROOT_DIR, "videos")
 SAMPLE_VIDEO_PATH = "/static/videos/sample_video.mp4"
 
-os.makedirs(FRAME_DIR, exist_ok=True)
+# Ensure directories exist
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
 
@@ -49,15 +52,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/frames", StaticFiles(directory=FRAME_DIR), name="frames")
+# Only mount static directory for videos and HTML assets
 app.mount("/static", StaticFiles(directory=STATIC_ROOT_DIR), name="static")
 
-
 # ------------------------
-# Frontend HTML 🎨
+# Frontend HTML (MODIFIED for Base64 frame handling)
 # ------------------------
 @app.get("/", response_class=HTMLResponse)
 def index():
+    # NOTE: The frontend JS is updated to handle Base64 image data instead of file URLs.
     return f"""
     <!DOCTYPE html>
     <html>
@@ -65,176 +68,32 @@ def index():
         <title>Artistic Swimming Analyzer</title>
         <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
         <style>
-            /* GENERAL STYLES AND COLORS */
-            body {{ 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                margin: 0; 
-                background-color: #f4f7f6;
-                color: #333;
-            }}
-            .container {{
-                /* Container width remains the same */
-                max-width: 1200px;
-                margin: 20px auto;
-                padding: 20px;
-                background: white;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-                border-radius: 8px;
-            }}
-            h2 {{
-                color: #007bff;
-                border-bottom: 2px solid #e9ecef;
-                padding-bottom: 5px;
-                margin-top: 25px;
-            }}
-            h3 {{
-                margin-top: 15px;
-                color: #555;
-            }}
-            button {{
-                background-color: #28a745;
-                color: white;
-                border: none;
-                padding: 10px 20px;
-                border-radius: 5px;
-                cursor: pointer;
-                transition: background-color 0.3s;
-                margin-left: 10px;
-            }}
-            button:hover {{
-                background-color: #218838;
-            }}
-            #useSampleBtn {{
-                background-color: #ffc107;
-                color: #333;
-            }}
-            #useSampleBtn:hover {{
-                background-color: #e0a800;
-            }}
-            /* Disabled button style */
-            button[disabled] {{
-                background-color: #cccccc !important; 
-                cursor: not-allowed;
-            }}
-
-            /* UPDATED: CSS for the image header (60% height) */
-            #headerLogo {{
-                /* Stretch to full width of the container */
-                width: 100%;
-                /* Height/size reduction is typically done via max-height or max-width/width/height */
-                max-height: 200px; /* Using max-width to effectively reduce the size */
-                height: auto;
-		object-fit: fill;
-                display: block; 
-                margin: 0 auto 20px auto; 
-            }}
-
-
-            /* FRAME STYLES (3-COLUMN GRID) */
-            #framesContainer {{
-                display: grid; 
-                /* Explicitly setting three equal-width columns */
-                grid-template-columns: 1fr 1fr 1fr; 
-                gap: 20px; 
-                margin-bottom: 20px;
-            }}
-            .frame-box {{ 
-                display: flex;
-                flex-direction: column; 
-                justify-content: space-between; 
-                align-items: center;
-                border: 2px solid #cce5ff;
-                border-radius: 8px;
-                background-color: #eaf3ff;
-                padding: 10px;
-                transition: transform 0.2s, box-shadow 0.2s;
-            }}
-            /* POP UP/DOWN EFFECT */
-            .frame-box.focused {{
-                border-color: #007bff;
-                box-shadow: 0 0 15px rgba(0, 123, 255, 0.5);
-                transform: scale(1.05); 
-                background-color: #ccddff;
-                z-index: 10; 
-            }}
-            img {{ 
-                width: 100%; 
-                height: auto; 
-                margin-bottom: 5px;
-                border: 1px solid #007bff;
-                border-radius: 4px;
-            }}
-            .frame-info {{
-                font-size: 0.8em; 
-                color: #666;
-                margin: 5px 0;
-            }}
-            .focus-btn {{
-                background-color: #007bff;
-                color: white;
-                border: none;
-                padding: 5px 10px;
-                border-radius: 4px;
-                cursor: pointer;
-                width: 100%;
-                text-align: center;
-                font-size: 0.9em;
-                margin-top: 5px;
-                transition: background-color 0.2s;
-            }}
-            .focus-btn.selected {{
-                background-color: #dc3545; 
-            }}
-            
-            /* VERTICAL COMPACTION */
-            .control-group {{
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                margin-bottom: 20px;
-            }}
-
-
-            /* AI JUDGEMENT RESPONSE STYLES */
-            #serverResponse {{
-                border: 2px solid #ffc107;
-                padding: 15px; 
-                background: #fffbe6;
-                border-radius: 6px;
-            }}
-            #serverResponse table {{ 
-                border-collapse: collapse; 
-                width: 100%; 
-                margin: 10px 0; 
-                font-size: 0.9em;
-            }}
-            #serverResponse th, #serverResponse td {{ 
-                border: 1px solid #ccc; 
-                padding: 8px; 
-                text-align: left; 
-            }}
-            #serverResponse th {{ 
-                background-color: #007bff;
-                color: white; 
-            }}
-            input[type="file"], textarea, select {{
-                padding: 10px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                margin-bottom: 10px;
-                width: 100%;
-                box-sizing: border-box;
-            }}
-            #figureSelect {{
-                width: 250px;
-            }}
-            #sampleVideoPlayer {{
-                width: 100%;
-                max-width: 400px;
-                margin-bottom: 15px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }}
+            /* Your CSS styles remain here, removed for brevity */
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background-color: #f4f7f6; color: #333; }}
+            .container {{ max-width: 1200px; margin: 20px auto; padding: 20px; background: white; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); border-radius: 8px; }}
+            h2 {{ color: #007bff; border-bottom: 2px solid #e9ecef; padding-bottom: 5px; margin-top: 25px; }}
+            h3 {{ margin-top: 15px; color: #555; }}
+            button {{ background-color: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; transition: background-color 0.3s; margin-left: 10px; }}
+            button:hover {{ background-color: #218838; }}
+            #useSampleBtn {{ background-color: #ffc107; color: #333; }}
+            #useSampleBtn:hover {{ background-color: #e0a800; }}
+            button[disabled] {{ background-color: #cccccc !important; cursor: not-allowed; }}
+            #headerLogo {{ width: 100%; max-height: 200px; height: auto; object-fit: fill; display: block; margin: 0 auto 20px auto; }}
+            #framesContainer {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px; }}
+            .frame-box {{ display: flex; flex-direction: column; justify-content: space-between; align-items: center; border: 2px solid #cce5ff; border-radius: 8px; background-color: #eaf3ff; padding: 10px; transition: transform 0.2s, box-shadow 0.2s; }}
+            .frame-box.focused {{ border-color: #007bff; box-shadow: 0 0 15px rgba(0, 123, 255, 0.5); transform: scale(1.05); background-color: #ccddff; z-index: 10; }}
+            img {{ width: 100%; height: auto; margin-bottom: 5px; border: 1px solid #007bff; border-radius: 4px; }}
+            .frame-info {{ font-size: 0.8em; color: #666; margin: 5px 0; }}
+            .focus-btn {{ background-color: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; width: 100%; text-align: center; font-size: 0.9em; margin-top: 5px; transition: background-color 0.2s; }}
+            .focus-btn.selected {{ background-color: #dc3545; }}
+            .control-group {{ display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }}
+            #serverResponse {{ border: 2px solid #ffc107; padding: 15px; background: #fffbe6; border-radius: 6px; }}
+            #serverResponse table {{ border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.9em; }}
+            #serverResponse th, #serverResponse td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
+            #serverResponse th {{ background-color: #007bff; color: white; }}
+            input[type="file"], textarea, select {{ padding: 10px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 10px; width: 100%; box-sizing: border-box; }}
+            #figureSelect {{ width: 250px; }}
+            #sampleVideoPlayer {{ width: 100%; max-width: 400px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }}
         </style>
     </head>
     <body>
@@ -248,9 +107,9 @@ def index():
             Your browser does not support the video tag.
         </video>
 
-            <div class="control-group">
+        <div class="control-group">
             <input type="file" id="videoInput" accept="video/*" style="margin-bottom: 0; width: auto;">
-                        <button id="uploadBtn" disabled>Upload Video and Extract Frames</button>
+            <button id="uploadBtn" disabled>Upload Video and Extract Frames</button>
             <button id="useSampleBtn">Use Sample Video</button>
         </div>
 
@@ -284,36 +143,29 @@ def index():
         <div id="serverResponse" style="min-height: 100px;">Awaiting Judgement...</div>
 
         <script>
-        let extractedFrames = [];
+        // *** FRAME DATA NOW STORES BASE64 STRING ***
+        let extractedFrames = []; // [{ base64_data: '...', timestamp_sec: '...' }, ...]
         let videoFileToUpload = null;
         let selectedFrameIndices = new Set(); 
 
-        // --- Function to check if a file is ready and enable the button ---
         function checkReadyState() {{
             const uploadBtn = document.getElementById("uploadBtn");
             const fileSelected = document.getElementById("videoInput").files.length > 0;
             const sampleReady = videoFileToUpload !== null;
 
-            if (fileSelected || sampleReady) {{
-                uploadBtn.disabled = false;
-            }} else {{
-                uploadBtn.disabled = true;
-            }}
+            uploadBtn.disabled = !(fileSelected || sampleReady);
         }}
 
-        // --- Frame Selection Logic (Pop Up/Down) ---
         function toggleFrameFocus(frameIndex) {{
             const frameBox = document.getElementById(`frame-box-${{frameIndex}}`);
             const focusBtn = document.getElementById(`focus-btn-${{frameIndex}}`);
 
             if (selectedFrameIndices.has(frameIndex)) {{
-                // Deselect
                 selectedFrameIndices.delete(frameIndex);
                 frameBox.classList.remove('focused');
                 focusBtn.classList.remove('selected');
                 focusBtn.textContent = 'Focus / Select';
             }} else {{
-                // Select
                 selectedFrameIndices.add(frameIndex);
                 frameBox.classList.add('focused');
                 focusBtn.classList.add('selected');
@@ -329,14 +181,11 @@ def index():
                 const response = await fetch('{SAMPLE_VIDEO_PATH}');
                 const blob = await response.blob();
                 
-                // Set videoFileToUpload variable
                 videoFileToUpload = new File([blob], "sample_video.mp4", {{type: "video/mp4"}});
                 
-                // Clear the file input visually (security prevents setting the value)
                 document.getElementById("videoInput").value = null;
                 document.getElementById("serverResponse").innerHTML = "Sample video ready. Click 'Upload Video and Extract Frames'.";
                 
-                // Check and enable the button
                 checkReadyState();
 
             }} catch (e) {{
@@ -360,9 +209,11 @@ def index():
             const formData = new FormData();
             formData.append("video", fileToProcess);
 
+            // API Call: Expects Base64 image data back
             const res = await fetch("/extract_frames", {{ method:"POST", body: formData }});
             const data = await res.json();
 
+            // Store Base64 data and timestamp
             extractedFrames = data.frames || [];
             selectedFrameIndices.clear(); 
             renderFrames();
@@ -371,13 +222,11 @@ def index():
 
         // --- Handle file input change ---
         document.getElementById("videoInput").onchange = () => {{
-            // Clear the sample video reference if a new file is chosen
             videoFileToUpload = null; 
-            // Check and enable/disable the button
             checkReadyState();
         }};
 
-        // --- Render Frames Function ---
+        // --- Render Frames Function (MODIFIED to use Base64 as Image Source) ---
         function renderFrames() {{
             const container = document.getElementById("framesContainer");
             container.innerHTML = "";
@@ -387,8 +236,9 @@ def index():
                 div.className = "frame-box";
                 div.id = `frame-box-${{idx}}`;
                 
+                // Use Base64 data URI as the image source
                 div.innerHTML = `
-                    <img src="${{f.url}}" /> 
+                    <img src="data:image/jpeg;base64,${{f.base64_data}}" /> 
                     <div class="frame-info">Time: ${{f.timestamp_sec}}s</div> 
                     <button id="focus-btn-${{idx}}" class="focus-btn" onclick="toggleFrameFocus(${{idx}})">Focus / Select</button>
                 `;
@@ -396,36 +246,38 @@ def index():
             }});
         }}
 
-        // --- Submit Judgement Function ---
+        // --- Submit Judgement Function (MODIFIED to send Base64 data) ---
         document.getElementById("submitSelected").onclick = async () => {{
             const selectedIndices = Array.from(selectedFrameIndices).sort((a, b) => a - b);
             if (selectedIndices.length === 0) {{ alert("Select at least one frame using the Focus button."); return; }}
             document.getElementById("serverResponse").innerHTML = "Sending frames for AI Judgement... Please wait.";
 
 
-            const selectedURLs = selectedIndices.map(idx => {{
-                const f = extractedFrames[idx];
-                return f.url;
+            // Create an array of Base64 strings to send to the backend
+            const selectedBase64Data = selectedIndices.map(idx => {{
+                return extractedFrames[idx].base64_data;
             }});
 
             const formData = new FormData();
             formData.append("figure_name", document.getElementById("figureSelect").value);
             formData.append("observations", document.getElementById("obsBox").value);
-            formData.append("frame_urls_json", JSON.stringify(selectedURLs));
+            // Send the Base64 array as a JSON string
+            formData.append("frame_base64_json", JSON.stringify(selectedBase64Data));
 
-            const res = await fetch("/judge_frames", {{ method:"POST", body: formData }});
+            // NOTE: API endpoint changed to /judge_base64_frames
+            const res = await fetch("/judge_base64_frames", {{ method:"POST", body: formData }});
             const data = await res.json();
             
             const serverResponseDiv = document.getElementById("serverResponse");
             try {{
+                // Note: The LLM output MUST use the HTML <table> format as instructed.
                 serverResponseDiv.innerHTML = marked.parse(data.llm_output || "");
-            }} catch (e) {{
+            } catch (e) {{
                 serverResponseDiv.textContent = JSON.stringify(data, null, 2);
                 console.error("Error parsing LLM output:", e);
             }}
         }};
         
-        // Ensure initial button state is checked when the page loads
         document.addEventListener('DOMContentLoaded', checkReadyState);
         </script>
     </div>
@@ -434,138 +286,134 @@ def index():
     """
 
 # ------------------------
-# Extract frames Endpoint (Optimized with 800px Resizing and Q75)
+# Extract frames Endpoint (MODIFIED for Base64 Output)
 # ------------------------
 @app.post("/extract_frames")
 async def extract_frames(video: UploadFile = File(...)):
+    # Use temporary file to process video (necessary with cv2)
     fd, path = tempfile.mkstemp(suffix=".mp4")
-    with os.fdopen(fd, "wb") as f:
-        f.write(await video.read())
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(await video.read())
 
-    cap = cv2.VideoCapture(path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap = cv2.VideoCapture(path)
+        if not cap.isOpened():
+            return JSONResponse(status_code=400, content={"frames": [], "message": "Could not open video file."})
 
-    # Define max width for resizing (Crucial for Base64 size reduction)
-    MAX_WIDTH = 800 
-    
-    # Target number of frames to keep
-    target_frames = 6
-    # Calculate step size to cover the entire video (roughly 10 steps max)
-    step = max(1, total_frames // 10) 
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    frames = []
-    count = 0
-    while True: # Changed to 'while True' to process the entire video
-        ret, frame = cap.read()
-        if not ret: break # Exit loop when video ends
+        MAX_WIDTH = 800
+        target_frames = 6
+        step = max(1, total_frames // 10)
 
-        if count % step == 0:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Only save frame if there is sufficient motion/detail
-            if gray.std() >= 10:
-                
-                # --- RESIZE LOGIC ---
-                height, width = frame.shape[:2]
-                resized_frame = frame
-                if width > MAX_WIDTH:
-                    # Calculate new dimensions while maintaining aspect ratio
-                    ratio = MAX_WIDTH / width
-                    new_width = MAX_WIDTH
-                    new_height = int(height * ratio)
+        frames = []
+        count = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret: break
+
+            if count % step == 0:
+                # Simple motion/detail check
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                if gray.std() >= 10:
+
+                    # --- RESIZE LOGIC ---
+                    height, width = frame.shape[:2]
+                    resized_frame = frame
+                    if width > MAX_WIDTH:
+                        ratio = MAX_WIDTH / width
+                        new_width = MAX_WIDTH
+                        new_height = int(height * ratio)
+                        resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+                    # Encode resized frame to JPEG bytes with compression 75
+                    # This eliminates the need to save to disk in a shared frame directory
+                    encode_param = [cv2.IMWRITE_JPEG_QUALITY, 75]
+                    _, buffer = cv2.imencode('.jpg', resized_frame, encode_param)
                     
-                    resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
-                # --- END RESIZE LOGIC ---
-                
-                filename = f"{uuid.uuid4().hex}.jpg"
-                filepath = os.path.join(FRAME_DIR, filename)
-                
-                # Save the frame using JPEG compression quality 75 (Aggressive size reduction)
-                cv2.imwrite(filepath, resized_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                    # Convert bytes to Base64 string
+                    base64_encoded = base64.b64encode(buffer).decode('utf-8')
 
-                new_frame_data = {
-                    "url": f"/frames/{filename}",
-                    "timestamp_sec": round(count/fps,2)
-                }
-                
-                # --- SLIDING WINDOW LOGIC (Keeps the latest frames) ---
-                if len(frames) >= target_frames:
-                    # Remove the OLDEST frame (index 0)
-                    frames.pop(0) 
-                
-                # Add the NEW frame to the end
-                frames.append(new_frame_data)
-                # --- END SLIDING WINDOW LOGIC ---
-                
-        count += 1
+                    frames_data = {
+                        "base64_data": base64_encoded,
+                        "timestamp_sec": round(count/fps, 2)
+                    }
 
-    cap.release()
-    os.remove(path)
+                    # --- SLIDING WINDOW LOGIC (Keeps the latest `target_frames` frames) ---
+                    if len(frames) >= target_frames:
+                        frames.pop(0) 
+                    frames.append(frames_data)
+                    # --- END SLIDING WINDOW LOGIC ---
+
+            count += 1
+    finally:
+        cap.release()
+        os.remove(path)
+        
     return {"frames": frames}
 
 
 # ------------------------
-# Judge frames with LLM Endpoint (REWRITTEN FOR GEMINI API)
+# Judge frames with LLM Endpoint (MODIFIED for Base64 Input)
 # ------------------------
-@app.post("/judge_frames")
+@app.post("/judge_base64_frames")
 async def judge_frames(
     figure_name: str = Form(...),
     observations: str = Form(""),
-    frame_urls_json: str = Form(...)
+    frame_base64_json: str = Form(...) # Now expects Base64 strings
 ):
-    # Check if the Gemini client initialized successfully
     global client
     if not client:
         return JSONResponse(status_code=500, content={"llm_output": "Error: Gemini client not initialized. Check GEMINI_API_KEY."})
     
-    frame_urls: List[str] = json.loads(frame_urls_json)
+    frame_base64_list: List[str] = json.loads(frame_base64_json)
 
-    # Load prompt template from JSON file
+    # Load prompt template from JSON file (retained for structured judging)
     try:
         with open("as_judging.json") as f:
             prompt_template = json.load(f)
     except FileNotFoundError:
-        return JSONResponse(status_code=500, content={"llm_output": "Error: as_judging.json not found. Check if the file exists."})
+        print("WARNING: as_judging.json not found. Using default guidelines.")
+        prompt_template = {"content": "Apply standard Artistic Swimming rules for technical execution and scoring."}
     except json.JSONDecodeError as e:
         return JSONResponse(status_code=500, content={"llm_output": f"Error: Invalid JSON in as_judging.json: {e}"})
 
-    # 1. Prepare text prompt
-    gemini_content = []
+    # 1. Prepare text prompt and image data
+    gemini_content: List[Any] = []
+    
     prompt_text = (
-        f"Analyze the sequence of images for the Artistic Swimming Figure: '{figure_name}'. "
-        f"Observations provided by the user: '{observations}'. "
-        f"If the observations field is blank, base your assessment strictly on the visual evidence from the images. " 
+        f"You are an expert Artistic Swimming judge. Analyze the sequence of {len(frame_base64_list)} images for the figure: '{figure_name}'. "
+        f"Observations: '{observations}'. "
+        "Calculate the score based on the three key transitions (T1, T2, T3) inherent in this figure. "
         f"Reference the following judging guidelines: {prompt_template.get('content', 'No guidelines provided')}. "
-        "Provide a technical assessment and a score out of 10. "
-        "Format the response strictly using Markdown."
+        
+        # *** STRICT FORMATTING REQUIREMENT (Retained) ***
+        "**CRITICAL INSTRUCTION: THE ENTIRE OUTPUT MUST BE FORMATTED EXACTLY LIKE THE EXAMPLE PROVIDED TO YOU. "
+        "The assessment MUST start with the score summary, followed by a single HTML <table> with the required six columns: "
+        "Transition, Max NVT, Max PV, Awarded PV, Awarded NVT, Key Observations. "
+        "Do NOT use Markdown tables. Only use the HTML <table> format.** "
+        "End the response with a 'Deductions' list and a 'What to Improve' list with numerical PV points."
     )
     gemini_content.append(prompt_text)
 
-    # 2. Iterate through URLs, read file locally, and create genai.types.Part objects
-    files_processed = 0
-    for url in frame_urls:
-        # Convert the public URL path back to the local file path
-        path = url.replace("/frames/", f"{FRAME_DIR}/")
-
+    # 2. Convert Base64 strings back to binary Parts for Gemini
+    for b64_data in frame_base64_list:
         try:
-            with open(path, "rb") as image_file:
-                image_bytes = image_file.read()
-                
-                # Create the Gemini Part object
-                image_part = genai.types.Part.from_bytes(
-                    data=image_bytes,
-                    mime_type='image/jpeg'
-                )
-                gemini_content.append(image_part)
-                files_processed += 1
-        except FileNotFoundError:
-            print(f"File not found for Gemini encoding: {path}")
-            continue 
+            image_bytes = base64.b64decode(b64_data)
+            # Create the Gemini Part object directly from binary data
+            image_part = Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
+            gemini_content.append(image_part)
+        except Exception as e:
+            # Skip corrupted Base64 or decoding errors
+            print(f"Error decoding Base64 image: {e}")
+            continue
 
-    # --- Pre-API Check ---
-    print(f"Sending {files_processed} images and prompt to Gemini...")
-    if files_processed == 0 and len(frame_urls) > 0:
-        return JSONResponse(status_code=400, content={"llm_output": "Error: Selected frames were not found on the server disk. Try re-extracting frames."})
+    files_processed = len(frame_base64_list)
+    print(f"Sending {files_processed} Base64 images and complex, strictly-formatted prompt to {MODEL_NAME}...")
+
+    if files_processed == 0:
+        return JSONResponse(status_code=400, content={"llm_output": "Error: No frames were processed for the model."})
 
     # --- GEMINI API Call & Response Handling ---
     output_text = ""
@@ -574,35 +422,20 @@ async def judge_frames(
             model=MODEL_NAME, 
             contents=gemini_content,
             config=genai.types.GenerateContentConfig(
-                max_output_tokens=2000 
+                max_output_tokens=MAX_OUTPUT_TOKENS
             )
         )
         
         output_text = completion.text
         
-        # Check if the output is blank (failure or safety block)
         if not output_text:
-            # Check the actual candidate list for a blockage reason
-            if completion.candidates and completion.candidates[0].finish_reason.name == 'SAFETY':
-                 # Extract and display the safety ratings
-                 safety_details = "\n".join([
-                     f"* **{r.category.name.replace('HARM_CATEGORY_', '').replace('_', ' ').title()}**: {r.probability.name}"
-                     for r in completion.candidates[0].safety_ratings
-                 ])
-                 
-                 print(f"WARNING: Gemini blocked the response due to safety filters.")
-                 print(f"SAFETY REASON:\n{safety_details}")
-                 
-                 output_text = (
-                     "## 🚨 Response Blocked by Safety Filters\n\n"
-                     "The AI generated content that was flagged by safety filters. "
-                     "This can happen with multimodal inputs. Try adjusting your prompt or selecting different frames. \n\n"
-                     f"### Block Details:\n{safety_details}"
-                 )
+            finish_reason = completion.candidates[0].finish_reason.name if completion.candidates else "UNKNOWN"
+            if finish_reason == 'SAFETY':
+                print("WARNING: Gemini blocked the response due to safety filters.")
+                output_text = "## 🚨 Response Blocked by Safety Filters\n\nTry adjusting your prompt or selecting different frames."
             else:
-                # Catch other non-safety related blank responses
-                print("WARNING: Gemini returned a blank response string for an unknown reason.")
-                output_text = "The AI returned a blank response. Try running the process again."
+                print(f"WARNING: Gemini returned a blank response string. Finish Reason: {finish_reason}")
+                output_text = f"The AI returned a blank response (Reason: {finish_reason}). Check the server logs for details."
         else:
             print(f"Gemini API call successful. First 100 chars: {output_text[:100]}...") 
 
@@ -615,7 +448,7 @@ async def judge_frames(
 
     return {
         "llm_output": output_text,
-        "num_frames": len(frame_urls),
+        "num_frames": files_processed,
         "figure_name": figure_name,
         "observations": observations
     }
