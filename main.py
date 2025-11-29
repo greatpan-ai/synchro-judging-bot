@@ -4,7 +4,7 @@ import tempfile
 import json
 import uuid
 import time 
-import base64 # <<< CRITICAL IMPORT FOR BASE64 ENCODING
+import base64 
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -424,7 +424,7 @@ def index():
     """
 
 # ------------------------
-# Extract frames Endpoint (Optimized with Resizing and Sliding Window)
+# Extract frames Endpoint (Optimized with 800px Resizing and Q75)
 # ------------------------
 @app.post("/extract_frames")
 async def extract_frames(video: UploadFile = File(...)):
@@ -436,8 +436,8 @@ async def extract_frames(video: UploadFile = File(...)):
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Define max width for resizing
-    MAX_WIDTH = 1024 
+    # Define max width for resizing (Crucial for Base64 size reduction)
+    MAX_WIDTH = 800 
     
     # Target number of frames to keep
     target_frames = 6
@@ -452,13 +452,14 @@ async def extract_frames(video: UploadFile = File(...)):
 
         if count % step == 0:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Only save frame if there is sufficient motion/detail (gray.std() >= 10)
+            # Only save frame if there is sufficient motion/detail
             if gray.std() >= 10:
                 
                 # --- RESIZE LOGIC ---
                 height, width = frame.shape[:2]
                 resized_frame = frame
                 if width > MAX_WIDTH:
+                    # Calculate new dimensions while maintaining aspect ratio
                     ratio = MAX_WIDTH / width
                     new_width = MAX_WIDTH
                     new_height = int(height * ratio)
@@ -469,8 +470,8 @@ async def extract_frames(video: UploadFile = File(...)):
                 filename = f"{uuid.uuid4().hex}.jpg"
                 filepath = os.path.join(FRAME_DIR, filename)
                 
-                # Save the frame using JPEG compression quality 85 (smaller file size)
-                cv2.imwrite(filepath, resized_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                # Save the frame using JPEG compression quality 75 (Aggressive size reduction)
+                cv2.imwrite(filepath, resized_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
 
                 new_frame_data = {
                     "url": f"/frames/{filename}",
@@ -527,7 +528,7 @@ async def judge_frames(
 
     # 2. Iterate through URLs, read file locally, and encode to Base64
     for url in frame_urls:
-        # Convert the public URL path back to the local file path
+        # Convert the public URL path back to the local file path (e.g., /frames/xyz.jpg -> temp_frames/xyz.jpg)
         path = url.replace("/frames/", f"{FRAME_DIR}/")
 
         try:
